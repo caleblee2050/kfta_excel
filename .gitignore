@@ -27,3 +27,6 @@ Thumbs.db
 # Output
 *.log
 report*.txt
+
+# Environment variables (API keys)
+.env

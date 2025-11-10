@@ -7,24 +7,50 @@ Excel Unifier - 통일되지 않은 엑셀 파일들을 분석하고 통합하�
 import pandas as pd
 import os
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from fuzzywuzzy import fuzz
 from collections import defaultdict
 import json
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 
 class ExcelUnifier:
-    def __init__(self, similarity_threshold: int = 85):
+    def __init__(
+        self,
+        similarity_threshold: int = 85,
+        use_ai: bool = False,
+        gemini_api_key: Optional[str] = None
+    ):
         """
         엑셀 통합기 초기화
 
         Args:
             similarity_threshold: 유사도 임계값 (0-100, 기본값 85)
+            use_ai: AI 기반 매칭 사용 여부 (기본값 False)
+            gemini_api_key: Gemini API 키 (없으면 환경변수에서 읽음)
         """
         self.similarity_threshold = similarity_threshold
+        self.use_ai = use_ai
         self.dataframes = []
         self.column_mappings = {}
         self.unified_columns = []
+
+        # AI 모드 초기화
+        self.ai_matcher = None
+        if use_ai:
+            try:
+                from ai_matcher import GeminiMatcher
+                self.ai_matcher = GeminiMatcher(api_key=gemini_api_key)
+                print("🤖 AI 모드 활성화 (Gemini API)")
+            except ImportError:
+                print("⚠️  ai_matcher 모듈을 찾을 수 없습니다. 기본 모드로 전환합니다.")
+                self.use_ai = False
+            except Exception as e:
+                print(f"⚠️  AI 모드 초기화 실패: {str(e)}. 기본 모드로 전환합니다.")
+                self.use_ai = False
 
     def load_excel_files(self, file_paths: List[str]) -> None:
         """여러 엑셀 파일 로드"""
@@ -116,9 +142,30 @@ class ExcelUnifier:
                 if col2 in processed:
                     continue
 
-                # 유사도 계산
-                similarity = fuzz.ratio(col1, col2)
-                if similarity >= self.similarity_threshold:
+                # 유사도 계산 (AI 모드 또는 기본 모드)
+                is_similar = False
+
+                if self.use_ai and self.ai_matcher:
+                    # AI 기반 유사도 계산
+                    try:
+                        result = self.ai_matcher.calculate_semantic_similarity(
+                            col1, col2,
+                            context="엑셀 컬럼명"
+                        )
+                        is_similar = result['is_similar']
+                        if is_similar:
+                            print(f"  🤖 AI 매칭: '{col1}' ↔ '{col2}' ({result['similarity']}%, {result['reason']})")
+                    except Exception as e:
+                        print(f"  ⚠️  AI 분석 실패, 기본 모드로 전환: {str(e)}")
+                        # 실패 시 기본 모드로 fallback
+                        similarity = fuzz.ratio(col1, col2)
+                        is_similar = similarity >= self.similarity_threshold
+                else:
+                    # 기본 모드: Levenshtein Distance
+                    similarity = fuzz.ratio(col1, col2)
+                    is_similar = similarity >= self.similarity_threshold
+
+                if is_similar:
                     similar_cols.append(col2)
                     processed.add(col2)
 
@@ -375,11 +422,24 @@ def main():
         '-r', '--report',
         help='분석 리포트 저장 경로'
     )
+    parser.add_argument(
+        '--ai',
+        action='store_true',
+        help='AI 기반 매칭 사용 (Gemini API 필요)'
+    )
+    parser.add_argument(
+        '--api-key',
+        help='Gemini API 키 (없으면 환경변수 GEMINI_API_KEY 사용)'
+    )
 
     args = parser.parse_args()
 
     # ExcelUnifier 실행
-    unifier = ExcelUnifier(similarity_threshold=args.threshold)
+    unifier = ExcelUnifier(
+        similarity_threshold=args.threshold,
+        use_ai=args.ai,
+        gemini_api_key=args.api_key
+    )
     unifier.load_excel_files(args.files)
     unifier.analyze_columns()
 
