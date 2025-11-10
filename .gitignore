@@ -30,3 +30,6 @@ report*.txt
 
 # Environment variables (API keys)
 .env
+
+# Railway
+.railway/
