@@ -106,6 +106,23 @@ def main():
             help="높을수록 엄격하게 매칭, 낮을수록 관대하게 매칭"
         )
 
+        # 출력 형식 선택
+        st.subheader("출력 형식")
+        output_format = st.radio(
+            "출력 파일 형식",
+            options=["auto", "kfta", "standard"],
+            index=0,
+            help="출력 파일의 컬럼 형식을 선택하세요",
+            horizontal=True
+        )
+
+        format_descriptions = {
+            "auto": "🔍 자동 감지 - 입력 파일의 컬럼을 분석하여 자동으로 형식 결정",
+            "kfta": "📋 강원교총 표준 - 12개 표준 컬럼 (현재교육청, 현재본청, 대응, ...)",
+            "standard": "📊 표준 형식 - 모든 컬럼 포함"
+        }
+        st.info(format_descriptions[output_format])
+
         st.divider()
 
         # 도움말
@@ -287,7 +304,10 @@ def main():
                         progress_bar.progress(50)
 
                         status_text.text("🔄 데이터 통합 중...")
-                        unified_df = unifier.unify_dataframes(key_columns=key_columns if key_columns else None)
+                        unified_df = unifier.unify_dataframes(
+                            key_columns=key_columns if key_columns else None,
+                            output_format=output_format
+                        )
                         progress_bar.progress(75)
 
                         status_text.text("✅ 완료!")

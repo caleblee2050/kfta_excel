@@ -276,12 +276,16 @@ class ExcelUnifier:
 
         return value_groups
 
-    def unify_dataframes(self, key_columns: List[str] = None) -> pd.DataFrame:
+    def unify_dataframes(self, key_columns: List[str] = None, output_format: str = 'auto') -> pd.DataFrame:
         """
         모든 데이터프레임을 통합
 
         Args:
             key_columns: 중복 판단에 사용할 키 컬럼들 (예: ['이름', '학교'])
+            output_format: 출력 형식 ('auto', 'standard', 'kfta')
+                - 'auto': 자동 감지 (기본값)
+                - 'standard': 모든 컬럼 포함
+                - 'kfta': 강원교총 표준 형식 (12개 컬럼)
 
         Returns:
             통합된 데이터프레임
@@ -330,6 +334,15 @@ class ExcelUnifier:
         result_df = pd.concat(unified_data, ignore_index=True)
         print(f"\n📊 통합 완료: 총 {len(result_df)}행")
 
+        # 출력 형식 적용
+        if output_format == 'kfta':
+            result_df = self._apply_kfta_format(result_df)
+        elif output_format == 'auto':
+            # 강원교총 형식 컬럼이 존재하는지 확인
+            kfta_columns = ['현재교육청', '현재본청', '대응', '발령교육청', '발령본청']
+            if any(col in result_df.columns for col in kfta_columns):
+                result_df = self._apply_kfta_format(result_df)
+
         # 키 컬럼이 지정된 경우 중복 제거
         if key_columns:
             print(f"\n🔑 키 컬럼 {key_columns}로 중복 확인 중...")
@@ -376,6 +389,57 @@ class ExcelUnifier:
             result_df = result_df.drop(columns=normalized_keys)
         else:
             result_df = df
+
+        return result_df
+
+    def _apply_kfta_format(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        강원교총 표준 형식으로 변환
+
+        표준 컬럼 순서:
+        1. 현재교육청
+        2. 현재본청
+        3. 대응
+        4. 발령교육청
+        5. 발령본청
+        6. 과목
+        7. 직위
+        8. 직종분류
+        9. 분류명
+        10. 취급코드
+        11. 시군구분
+        12. 교호기호등
+        """
+        print("\n📋 강원교총 표준 형식 적용 중...")
+
+        # 표준 컬럼 순서
+        KFTA_COLUMNS = [
+            '현재교육청',
+            '현재본청',
+            '대응',
+            '발령교육청',
+            '발령본청',
+            '과목',
+            '직위',
+            '직종분류',
+            '분류명',
+            '취급코드',
+            '시군구분',
+            '교호기호등'
+        ]
+
+        result_df = df.copy()
+
+        # 누락된 컬럼 추가 (빈 값으로)
+        for col in KFTA_COLUMNS:
+            if col not in result_df.columns:
+                result_df[col] = ""
+                print(f"  ℹ 컬럼 '{col}' 추가 (빈 값)")
+
+        # 표준 순서대로 컬럼 재정렬
+        result_df = result_df[KFTA_COLUMNS]
+
+        print(f"  ✓ 표준 형식 적용 완료: {len(KFTA_COLUMNS)}개 컬럼")
 
         return result_df
 
