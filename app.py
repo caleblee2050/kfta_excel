@@ -329,7 +329,12 @@ def main():
             with col2:
                 st.metric("총 컬럼 수", len(df.columns))
             with col3:
-                st.metric("중복 제거 비율", f"{((1 - len(df) / sum(len(unifier.dataframes[i]['data']) for i in range(len(st.session_state.unifier.dataframes)))) * 100):.1f}%")
+                if st.session_state.unifier:
+                    original_total = sum(len(st.session_state.unifier.dataframes[i]['data']) for i in range(len(st.session_state.unifier.dataframes)))
+                    duplicate_ratio = ((1 - len(df) / original_total) * 100) if original_total > 0 else 0
+                    st.metric("중복 제거 비율", f"{duplicate_ratio:.1f}%")
+                else:
+                    st.metric("중복 제거 비율", "0.0%")
 
             st.divider()
 

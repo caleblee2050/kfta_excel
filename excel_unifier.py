@@ -286,6 +286,11 @@ class ExcelUnifier:
 
             df_renamed = df.rename(columns=rename_dict)
 
+            # 중복된 컬럼명 처리 (같은 이름의 컬럼이 여러 개 있는 경우)
+            if df_renamed.columns.duplicated().any():
+                # 중복 컬럼 제거 (첫 번째만 유지)
+                df_renamed = df_renamed.loc[:, ~df_renamed.columns.duplicated()]
+
             # 누락된 컬럼 추가 (빈 값으로)
             for col in self.unified_columns:
                 if col not in df_renamed.columns:
