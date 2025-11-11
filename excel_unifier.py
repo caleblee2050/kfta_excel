@@ -16,6 +16,12 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
+# KFTA 파서 import
+try:
+    from kfta_parser import KFTAParser
+except ImportError:
+    KFTAParser = None
+
 
 class ExcelUnifier:
     def __init__(
@@ -329,6 +335,19 @@ class ExcelUnifier:
         for df_info in self.dataframes:
             df = df_info['data'].copy()
 
+            # KFTA 형식이고 파서가 사용 가능하면 특수 파싱 적용
+            if output_format == 'kfta' and KFTAParser is not None:
+                parser = KFTAParser()
+                df_unified = parser.parse_dataframe(df)
+
+                file_name = os.path.basename(df_info['path'])
+                sheet_info = f" (시트: {df_info['sheet']})" if df_info.get('sheet') else ""
+                print(f"  ✓ {file_name}{sheet_info}: {len(df_unified)}행 변환 (KFTA 파서 사용)")
+
+                unified_data.append(df_unified)
+                continue
+
+            # 일반 매핑 방식
             # 컬럼명 매핑
             rename_dict = {}
             for unified_col, original_cols in self.column_mappings.items():
@@ -361,14 +380,17 @@ class ExcelUnifier:
         result_df = pd.concat(unified_data, ignore_index=True)
         print(f"\n📊 통합 완료: 총 {len(result_df)}행")
 
-        # 출력 형식 적용
-        if output_format == 'kfta':
+        # 출력 형식 적용 (KFTA 파서를 사용한 경우 이미 표준 형식이므로 건너뜀)
+        if output_format == 'kfta' and KFTAParser is None:
+            # KFTA 파서를 사용하지 않은 경우에만 적용
             result_df = self._apply_kfta_format(result_df)
         elif output_format == 'auto':
             # 강원교총 형식 컬럼이 존재하는지 확인
             kfta_columns = ['현재교육청', '현재본청', '대응', '발령교육청', '발령본청']
             if any(col in result_df.columns for col in kfta_columns):
-                result_df = self._apply_kfta_format(result_df)
+                # 이미 KFTA 컬럼이 있으면 포맷만 적용
+                if len(result_df.columns) != 12:  # 12개 표준 컬럼이 아니면
+                    result_df = self._apply_kfta_format(result_df)
 
         # 키 컬럼이 지정된 경우 중복 제거
         if key_columns:
