@@ -142,6 +142,9 @@ class ExcelUnifier:
 
         unique_columns = list(column_freq.keys())
 
+        # 발견된 모든 컬럼 출력
+        print(f"  📋 발견된 컬럼: {unique_columns}")
+
         # 컬럼 그룹화
         column_groups = {}
         processed = set()
@@ -159,6 +162,7 @@ class ExcelUnifier:
                     if col_normalized == keyword_normalized or keyword_normalized in col_normalized:
                         matched_cols.append(col)
                         processed.add(col)
+                        print(f"  ✓ '{col}' → '{unified_name}' (키워드: '{keyword}')")
                         break
 
             if matched_cols:
@@ -215,6 +219,13 @@ class ExcelUnifier:
 
         self.column_mappings = column_groups
         self.unified_columns = list(column_groups.keys())
+
+        # 매핑되지 않은 컬럼 표시
+        unmatched = [col for col in unique_columns if col not in processed]
+        if unmatched:
+            print(f"  ⚠️  매핑되지 않은 컬럼 ({len(unmatched)}개): {unmatched}")
+
+        print(f"\n✅ 총 {len(column_groups)}개의 통합 컬럼 생성")
 
         return column_groups
 
