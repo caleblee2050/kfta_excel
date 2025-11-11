@@ -87,7 +87,6 @@ def main():
         if use_ai:
             st.info("✨ AI 모드: 동의어 및 다국어 매칭 지원")
             # API 키 확인
-            import os
             from dotenv import load_dotenv
             load_dotenv()
 
