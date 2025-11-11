@@ -53,7 +53,7 @@ class ExcelUnifier:
                 self.use_ai = False
 
     def load_excel_files(self, file_paths: List[str]) -> None:
-        """여러 엑셀 파일 로드"""
+        """여러 엑셀 파일 로드 (모든 시트 포함)"""
         print(f"📂 {len(file_paths)}개의 파일을 로드합니다...")
 
         for file_path in file_paths:
@@ -61,15 +61,36 @@ class ExcelUnifier:
                 # 엑셀 파일 읽기 (.xlsx, .xls 모두 지원)
                 if file_path.endswith('.csv'):
                     df = pd.read_csv(file_path)
+                    self.dataframes.append({
+                        'path': file_path,
+                        'sheet': None,
+                        'data': df,
+                        'columns': list(df.columns)
+                    })
+                    print(f"  ✓ {os.path.basename(file_path)}: {len(df)}행, {len(df.columns)}개 컬럼")
                 else:
-                    df = pd.read_excel(file_path)
+                    # 엑셀 파일의 모든 시트 읽기
+                    excel_file = pd.ExcelFile(file_path)
+                    sheet_names = excel_file.sheet_names
 
-                self.dataframes.append({
-                    'path': file_path,
-                    'data': df,
-                    'columns': list(df.columns)
-                })
-                print(f"  ✓ {os.path.basename(file_path)}: {len(df)}행, {len(df.columns)}개 컬럼")
+                    print(f"  📄 {os.path.basename(file_path)}: {len(sheet_names)}개 시트 발견")
+
+                    for sheet_name in sheet_names:
+                        df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+                        # 빈 시트 건너뛰기
+                        if df.empty or len(df.columns) == 0:
+                            print(f"    ⊘ 시트 '{sheet_name}': 빈 시트 (건너뜀)")
+                            continue
+
+                        self.dataframes.append({
+                            'path': file_path,
+                            'sheet': sheet_name,
+                            'data': df,
+                            'columns': list(df.columns)
+                        })
+                        print(f"    ✓ 시트 '{sheet_name}': {len(df)}행, {len(df.columns)}개 컬럼")
+
             except Exception as e:
                 print(f"  ✗ {file_path} 로드 실패: {str(e)}")
 
@@ -300,7 +321,10 @@ class ExcelUnifier:
             df_unified = df_renamed[self.unified_columns]
             unified_data.append(df_unified)
 
-            print(f"  ✓ {os.path.basename(df_info['path'])}: {len(df_unified)}행 변환")
+            # 시트 정보 포함하여 출력
+            file_name = os.path.basename(df_info['path'])
+            sheet_info = f" (시트: {df_info['sheet']})" if df_info.get('sheet') else ""
+            print(f"  ✓ {file_name}{sheet_info}: {len(df_unified)}행 변환")
 
         # 모든 데이터 결합
         result_df = pd.concat(unified_data, ignore_index=True)

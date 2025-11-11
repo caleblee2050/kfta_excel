@@ -179,19 +179,43 @@ def main():
                 try:
                     if file.name.endswith('.csv'):
                         df = pd.read_csv(tmp_path)
+                        file_info.append({
+                            '파일명': file.name,
+                            '시트': '-',
+                            '행 수': len(df),
+                            '컬럼 수': len(df.columns),
+                            '크기': f"{file.size / 1024:.1f} KB"
+                        })
+
+                        with st.expander(f"📄 {file.name} 미리보기"):
+                            st.dataframe(df.head(5), use_container_width=True)
+                            st.caption(f"컬럼: {', '.join(df.columns.tolist())}")
                     else:
-                        df = pd.read_excel(tmp_path)
+                        # 엑셀 파일의 모든 시트 읽기
+                        excel_file = pd.ExcelFile(tmp_path)
+                        sheet_names = excel_file.sheet_names
 
-                    file_info.append({
-                        '파일명': file.name,
-                        '행 수': len(df),
-                        '컬럼 수': len(df.columns),
-                        '크기': f"{file.size / 1024:.1f} KB"
-                    })
+                        with st.expander(f"📄 {file.name} 미리보기 ({len(sheet_names)}개 시트)"):
+                            for sheet_name in sheet_names:
+                                df = pd.read_excel(tmp_path, sheet_name=sheet_name)
 
-                    with st.expander(f"📄 {file.name} 미리보기"):
-                        st.dataframe(df.head(5), use_container_width=True)
-                        st.caption(f"컬럼: {', '.join(df.columns.tolist())}")
+                                # 빈 시트 건너뛰기
+                                if df.empty or len(df.columns) == 0:
+                                    st.caption(f"⊘ 시트 '{sheet_name}': 빈 시트")
+                                    continue
+
+                                file_info.append({
+                                    '파일명': file.name,
+                                    '시트': sheet_name,
+                                    '행 수': len(df),
+                                    '컬럼 수': len(df.columns),
+                                    '크기': f"{file.size / 1024:.1f} KB"
+                                })
+
+                                st.markdown(f"**시트: {sheet_name}**")
+                                st.dataframe(df.head(5), use_container_width=True)
+                                st.caption(f"컬럼: {', '.join(df.columns.tolist())}")
+                                st.divider()
 
                 except Exception as e:
                     st.error(f"❌ {file.name} 읽기 실패: {str(e)}")
