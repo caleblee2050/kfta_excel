@@ -35,13 +35,78 @@ class KFTAParser:
         '고성': '강원특별자치도고성교육지원청',
     }
 
-    # 학교 약칭 매핑
+    # 강원도 중고등학교와 교육지원청 매핑
+    # 학교명 키워드 → 교육지원청
+    MIDDLE_HIGH_SCHOOL_REGION_MAP = {
+        # 춘천
+        '춘천': '강원특별자치도춘천교육지원청',
+        # 원주
+        '원주': '강원특별자치도원주교육지원청',
+        # 강릉
+        '강릉': '강원특별자치도강릉교육지원청',
+        '경포': '강원특별자치도강릉교육지원청',
+        '명륜': '강원특별자치도강릉교육지원청',
+        '옥계': '강원특별자치도강릉교육지원청',
+        # 동해
+        '동해': '강원특별자치도동해교육지원청',
+        '묵호': '강원특별자치도동해교육지원청',
+        '북평': '강원특별자치도동해교육지원청',
+        '하랑': '강원특별자치도동해교육지원청',
+        '예람': '강원특별자치도동해교육지원청',
+        # 태백
+        '태백': '강원특별자치도태백교육지원청',
+        # 속초/양양
+        '속초': '강원특별자치도속초양양교육지원청',
+        '양양': '강원특별자치도속초양양교육지원청',
+        # 삼척
+        '삼척': '강원특별자치도삼척교육지원청',
+        '근덕': '강원특별자치도삼척교육지원청',
+        '도계': '강원특별자치도삼척교육지원청',
+        # 홍천
+        '홍천': '강원특별자치도홍천교육지원청',
+        # 횡성
+        '횡성': '강원특별자치도횡성교육지원청',
+        '우천': '강원특별자치도횡성교육지원청',
+        # 영월
+        '영월': '강원특별자치도영월교육지원청',
+        # 평창
+        '평창': '강원특별자치도평창교육지원청',
+        '진부': '강원특별자치도평창교육지원청',
+        # 정선
+        '정선': '강원특별자치도정선교육지원청',
+        '사북': '강원특별자치도정선교육지원청',
+        # 철원
+        '철원': '강원특별자치도철원교육지원청',
+        # 화천
+        '화천': '강원특별자치도화천교육지원청',
+        # 양구
+        '양구': '강원특별자치도양구교육지원청',
+        # 인제
+        '인제': '강원특별자치도인제교육지원청',
+        # 고성
+        '고성': '강원특별자치도고성교육지원청',
+        # 기타 유명 중고등학교
+        '하슬라': '강원특별자치도강릉교육지원청',
+        '청아': '강원특별자치도춘천교육지원청',
+        '제일': '강원특별자치도강릉교육지원청',
+    }
+
+    # 학교 약칭 매핑 (순서 중요: 긴 것부터)
     SCHOOL_ABBR_MAPPINGS = {
         '공고': '공업고등학교',
         '정산고': '정보산업고등학교',
         '산과고': '산업과학고등학교',
         '여고': '여자고등학교',
         '여중': '여자중학교',
+        '남고': '남자고등학교',
+        '남중': '남자중학교',
+        '상고': '상업고등학교',
+        '농고': '농업고등학교',
+        '공고': '공업고등학교',
+        '과학고': '과학고등학교',
+        '외고': '외국어고등학교',
+        '예고': '예술고등학교',
+        '체고': '체육고등학교',
         '고': '고등학교',
         '중': '중학교',
         '초': '초등학교',
@@ -114,19 +179,81 @@ class KFTAParser:
         """지역명으로 교육지원청명 가져오기"""
         return self.GANGWON_REGIONS.get(region, f'강원특별자치도{region}교육지원청')
 
+    def find_education_office_for_school(self, school_name: str) -> str:
+        """
+        중고등학교명에서 교육지원청 찾기
+
+        Args:
+            school_name: 학교명 (예: "홍천여중", "강릉제일고")
+
+        Returns:
+            교육지원청명 (예: "강원특별자치도홍천교육지원청")
+        """
+        if pd.isna(school_name) or not school_name:
+            return ''
+
+        school_name = str(school_name).strip()
+
+        # MIDDLE_HIGH_SCHOOL_REGION_MAP에서 키워드 매칭
+        # 긴 키워드부터 매칭 (예: "강릉제일"이 "강릉"보다 먼저)
+        sorted_keywords = sorted(self.MIDDLE_HIGH_SCHOOL_REGION_MAP.keys(),
+                                key=len, reverse=True)
+
+        for keyword in sorted_keywords:
+            if keyword in school_name:
+                return self.MIDDLE_HIGH_SCHOOL_REGION_MAP[keyword]
+
+        return ''
+
     def expand_school_abbreviation(self, school_name: str) -> str:
         """
         학교 약칭을 정식 명칭으로 확장
         예: "춘천공고" → "춘천공업고등학교"
             "원주여고" → "원주여자고등학교"
             "춘천OO초" → "춘천OO초등학교"
+            "신림초/교사" → "신림초등학교"
+            "OO초병설유치원" → "OO초등학교"
+            "속초유" → "속초유치원" (예외)
         """
         if pd.isna(school_name) or not school_name:
             return school_name
 
         school_name = str(school_name).strip()
 
-        # 약칭 매핑을 길이 순으로 정렬 (긴 것부터 매칭)
+        # 1. /교사, /교장 등 직위 표기 제거
+        if '/' in school_name:
+            school_name = school_name.split('/')[0].strip()
+
+        # 2. 병설유치원 처리
+        # OO초병설유치원 → OO초등학교
+        # OO초 병설유치원 → OO초등학교
+        # OO초 병설유 → OO초등학교
+        # OO초병설유 → OO초등학교
+        # OO초유 → OO초등학교 (단, 속초유는 예외)
+        byeongseol_patterns = [
+            '병설유치원',
+            ' 병설유치원',
+            ' 병설유',
+            '병설유',
+        ]
+
+        for pattern in byeongseol_patterns:
+            if pattern in school_name:
+                school_name = school_name.replace(pattern, '')
+                # 초로 끝나면 초등학교로 확장
+                if school_name.endswith('초'):
+                    return school_name + '등학교'
+                return school_name
+
+        # OO초유 → OO초등학교 (단, 속초유는 예외)
+        if school_name.endswith('초유') and not school_name == '속초유':
+            return school_name[:-2] + '초등학교'
+
+        # 속초유 → 속초유치원 (예외 처리)
+        if school_name == '속초유':
+            return '속초유치원'
+
+        # 3. 약칭 매핑을 길이 순으로 정렬 (긴 것부터 매칭)
         sorted_mappings = sorted(self.SCHOOL_ABBR_MAPPINGS.items(),
                                 key=lambda x: len(x[0]),
                                 reverse=True)
@@ -149,34 +276,34 @@ class KFTAParser:
         Returns:
             (교육청명, 학교풀네임) 튜플
             예: ("강원특별자치도춘천교육지원청", "남산초등학교")
+
+        중요: 지역명 뒤에 공백이 있을 때만 지역명을 교육청으로 분리
+              예: "춘천 남산초" → (춘천교육청, "남산초등학교")
+                  "동해중앙초" → ("", "동해중앙초등학교")
+                  "동해중학교" → ("", "동해중학교")
         """
         if pd.isna(school_text) or not school_text:
             return ('', school_text)
 
         school_text = str(school_text).strip()
 
-        # 패턴 1: "지역명 학교명" (공백 포함)
-        # 패턴 2: "지역명학교명" (공백 없음)
         region = None
         school_name = school_text
+        education_office = ''
 
-        # 강원도 지역명 찾기
+        # 강원도 지역명 찾기 (공백이 있는 경우만 분리)
         for region_name in self.GANGWON_REGIONS.keys():
-            if school_text.startswith(region_name):
+            if school_text.startswith(region_name + ' '):  # 지역명 뒤에 공백이 있는 경우만
                 region = region_name
-                # 지역명 제거
+                # 지역명과 공백 제거
                 remainder = school_text[len(region_name):].strip()
                 if remainder:
                     school_name = remainder
+                    education_office = self.get_education_office(region)
                 break
 
         # 학교 약칭 확장
         school_name = self.expand_school_abbreviation(school_name)
-
-        # 교육청명 생성
-        education_office = ''
-        if region:
-            education_office = self.get_education_office(region)
 
         return (education_office, school_name)
 
@@ -260,19 +387,19 @@ class KFTAParser:
         행 데이터를 강원교총 표준 형식으로 변환
 
         필드 매핑:
-        - 3번째 필드(인덱스 2) → 대응 (성명)
+        - 3번째 필드(인덱스 2) → 이름 (성명)
         - 5번째 필드(인덱스 4) → 직위 (정규화 적용)
-        - 6번째 필드(인덱스 5) → 발령본청 (약칭 확장)
+        - 6번째 필드(인덱스 5) → 발령분회 (약칭 확장)
         - 6번째 필드의 지역명 → 발령교육청
-        - 8번째 필드(인덱스 7) → 현재본청 (조건부, 약칭 확장)
-        - 9번째 필드(인덱스 8) → 현재교육청/현재본청 참고
+        - 8번째 필드(인덱스 7) → 현재분회 (조건부, 약칭 확장)
+        - 9번째 필드(인덱스 8) → 현재교육청/현재분회 참고
         """
         result = {
             '현재교육청': '',
-            '현재본청': '',
-            '대응': '',
+            '현재분회': '',
+            '이름': '',
             '발령교육청': '',
-            '발령본청': '',
+            '발령분회': '',
             '과목': '',
             '직위': '',
             '직종분류': '',
@@ -282,16 +409,21 @@ class KFTAParser:
             '교호기호등': '',
         }
 
-        # 3번째 필드 → 대응 (성명)
+        # 3번째 필드 → 이름 (성명)
         if len(row) > 2:
-            result['대응'] = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ''
+            result['이름'] = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ''
 
         # 5번째 필드 → 직위 (정규화 적용)
         if len(row) > 4:
             position = str(row.iloc[4]).strip() if pd.notna(row.iloc[4]) else ''
             result['직위'] = self.normalize_position(position)
 
-        # 6번째 필드 → 발령본청 및 발령교육청
+        # 9번째 필드 → 과목 (중등교사 전용)
+        if len(row) > 8:
+            subject = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
+            result['과목'] = subject
+
+        # 6번째 필드 → 발령분회 및 발령교육청
         if len(row) > 5:
             field_6 = str(row.iloc[5]).strip() if pd.notna(row.iloc[5]) else ''
 
@@ -303,24 +435,30 @@ class KFTAParser:
                 edu_office, school_name = self.verify_and_expand_with_ai(field_6)
                 if edu_office:
                     result['발령교육청'] = edu_office
-                    result['발령본청'] = school_name
+                    result['발령분회'] = school_name
                 else:
-                    result['발령본청'] = school_name
+                    result['발령분회'] = school_name
             else:
                 # "□□ OO초" 형식 파싱
                 edu_office, school_name = self.parse_abbreviated_school_format(field_6)
 
                 if edu_office:  # 약식 형식으로 파싱 성공
                     result['발령교육청'] = edu_office
-                    result['발령본청'] = school_name
+                    result['발령분회'] = school_name
                 else:
                     # 일반 형식 처리
-                    result['발령본청'] = self.expand_school_abbreviation(field_6)
+                    result['발령분회'] = self.expand_school_abbreviation(field_6)
 
-                    # 지역명 추출 → 발령교육청
-                    region = self.extract_region_from_text(field_6)
-                    if region:
-                        result['발령교육청'] = self.get_education_office(region)
+                    # 중고등학교 교육지원청 자동 매핑
+                    if is_middle_high:
+                        edu_office = self.find_education_office_for_school(result['발령분회'])
+                        if edu_office:
+                            result['발령교육청'] = edu_office
+                    else:
+                        # 초등학교는 지역명 추출 → 발령교육청
+                        region = self.extract_region_from_text(field_6)
+                        if region:
+                            result['발령교육청'] = self.get_education_office(region)
 
         # 8번째 필드 처리
         if len(row) > 7:
@@ -328,27 +466,29 @@ class KFTAParser:
 
             # 8번째 필드가 지역명만 있는 경우
             if self.is_region_name_only(field_8):
-                # 9번째 필드 참고
-                if len(row) > 8:
-                    field_9 = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
+                # 10번째 필드(인덱스 9) 참고 - 비고란에 실제 학교명
+                if len(row) > 9:
+                    field_10 = str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else ''
 
-                    # "□□ OO초" 형식 파싱
-                    edu_office, school_name = self.parse_abbreviated_school_format(field_9)
+                    if field_10:  # 비고에 학교명이 있으면
+                        # 학교 약칭 확장
+                        school_name = self.expand_school_abbreviation(field_10)
+                        result['현재분회'] = school_name
 
-                    if edu_office:  # 약식 형식으로 파싱 성공
-                        result['현재교육청'] = edu_office
-                        result['현재본청'] = school_name
-                    else:
-                        # 9번째 필드에서 교육청과 본청 추출
-                        region_9 = self.extract_region_from_text(field_9)
-                        if region_9:
-                            result['현재교육청'] = self.get_education_office(region_9)
-                            result['현재본청'] = self.expand_school_abbreviation(field_9)
+                        # 중고등학교 교육지원청 자동 매핑
+                        edu_office = self.find_education_office_for_school(school_name)
+                        if edu_office:
+                            result['현재교육청'] = edu_office
                         else:
-                            # 8번째 필드의 지역명 사용
+                            # 매핑 실패 시 8번째 필드의 지역명 사용
                             region_8 = self.extract_region_from_text(field_8)
                             if region_8:
                                 result['현재교육청'] = self.get_education_office(region_8)
+                    else:
+                        # 비고가 없으면 8번째 필드의 지역명만 사용
+                        region_8 = self.extract_region_from_text(field_8)
+                        if region_8:
+                            result['현재교육청'] = self.get_education_office(region_8)
             else:
                 # 중고등학교는 AI 검증 우선 시도
                 is_middle_high = '중학' in field_8 or '고등' in field_8 or field_8.endswith('중') or field_8.endswith('고')
@@ -358,24 +498,30 @@ class KFTAParser:
                     edu_office, school_name = self.verify_and_expand_with_ai(field_8)
                     if edu_office:
                         result['현재교육청'] = edu_office
-                        result['현재본청'] = school_name
+                        result['현재분회'] = school_name
                     else:
-                        result['현재본청'] = school_name
+                        result['현재분회'] = school_name
                 else:
                     # "□□ OO초" 형식 파싱
                     edu_office, school_name = self.parse_abbreviated_school_format(field_8)
 
                     if edu_office:  # 약식 형식으로 파싱 성공
                         result['현재교육청'] = edu_office
-                        result['현재본청'] = school_name
+                        result['현재분회'] = school_name
                     else:
-                        # 8번째 필드가 지역명만이 아니면 → 현재본청
-                        result['현재본청'] = self.expand_school_abbreviation(field_8)
+                        # 8번째 필드가 지역명만이 아니면 → 현재분회
+                        result['현재분회'] = self.expand_school_abbreviation(field_8)
 
-                        # 8번째 필드에서 지역명 추출 → 현재교육청
-                        region = self.extract_region_from_text(field_8)
-                        if region:
-                            result['현재교육청'] = self.get_education_office(region)
+                        # 중고등학교 교육지원청 자동 매핑
+                        if is_middle_high:
+                            edu_office = self.find_education_office_for_school(result['현재분회'])
+                            if edu_office:
+                                result['현재교육청'] = edu_office
+                        else:
+                            # 초등학교는 8번째 필드에서 지역명 추출 → 현재교육청
+                            region = self.extract_region_from_text(field_8)
+                            if region:
+                                result['현재교육청'] = self.get_education_office(region)
 
         return result
 
