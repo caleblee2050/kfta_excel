@@ -15,6 +15,10 @@ import tempfile
 import os
 from datetime import datetime
 
+# 버전 정보
+__version__ = "1.2.0"
+__release_date__ = "2025-11-13"
+
 
 # 페이지 설정
 st.set_page_config(
@@ -65,6 +69,11 @@ def main():
         unsafe_allow_html=True
     )
 
+    # 버전 정보 표시
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col3:
+        st.caption(f"버전 {__version__} ({__release_date__})")
+
     # 세션 상태 초기화
     if 'unifier' not in st.session_state:
         st.session_state.unifier = None
@@ -80,7 +89,7 @@ def main():
         # AI 모드 토글
         use_ai = st.checkbox(
             "🤖 AI 모드 (Gemini API)",
-            value=False,
+            value=True,
             help="AI를 활용하여 의미론적 유사도 분석 (동의어, 다국어, 약어 인식)"
         )
 
@@ -106,21 +115,21 @@ def main():
         )
 
         # 출력 형식 선택
-        st.subheader("출력 형식")
+        st.subheader("📄 출력 형식")
         output_format = st.radio(
             "출력 파일 형식",
-            options=["auto", "kfta", "standard"],
+            options=["kfta", "auto", "standard"],
             index=0,
             help="출력 파일의 컬럼 형식을 선택하세요",
             horizontal=True
         )
 
         format_descriptions = {
-            "auto": "🔍 자동 감지 - 입력 파일의 컬럼을 분석하여 자동으로 형식 결정",
-            "kfta": "📋 강원교총 표준 - 12개 표준 컬럼 (현재교육청, 현재본청, 대응, ...)",
-            "standard": "📊 표준 형식 - 모든 컬럼 포함"
+            "auto": "🔍 **자동 감지**: 입력 파일의 컬럼을 분석하여 자동으로 형식 결정",
+            "kfta": "📋 **강원교총 표준** (권장): 12개 표준 컬럼 형식\n- 현재교육청, 현재본청, 대응, 발령교육청, 발령본청, 과목, 직위, 직종분류, 분류명, 취급코드, 시군구분, 교호기호등",
+            "standard": "📊 **표준 형식**: 모든 컬럼 포함 (병합하지 않음)"
         }
-        st.info(format_descriptions[output_format])
+        st.markdown(format_descriptions[output_format])
 
         st.divider()
 
@@ -249,7 +258,95 @@ def main():
             st.info("👈 먼저 파일을 업로드해주세요")
         else:
             # 키 컬럼 선택
-            st.subheader("중복 제거 설정")
+            st.subheader("🔑 중복 제거 설정")
+
+            # 상세 설명 추가
+            with st.expander("❓ 중복 제거 설정이란?", expanded=False):
+                st.markdown("""
+                ### 중복 제거 설정의 역할
+
+                여러 엑셀 파일을 통합할 때, **같은 사람의 정보가 여러 파일에 중복**되어 있을 수 있습니다.
+                중복 제거 설정은 이런 중복 데이터를 자동으로 찾아서 하나로 병합하는 기능입니다.
+
+                ---
+
+                #### 🎯 언제 필요한가요?
+
+                **필요한 경우:**
+                - 같은 명단이 여러 파일에 나눠져 있을 때
+                - 정기 업데이트된 파일들을 합칠 때
+                - 중복된 인원 정보를 정리하고 싶을 때
+
+                **예시:**
+                - `2024년_명단.xlsx`와 `2025년_명단.xlsx`를 합치는데,
+                  2024년에 있던 김철수 선생님이 2025년에도 있다면 → **중복!**
+
+                **불필요한 경우:**
+                - 완전히 다른 학교의 명단을 합칠 때
+                - 모든 행이 고유한 경우
+
+                ---
+
+                #### 🔑 키 컬럼이란?
+
+                **키 컬럼**: 중복을 판단하는 기준이 되는 컬럼입니다.
+
+                **선택 방법:**
+                1. **개인 식별용**: `이름`, `이름+학교`, `이름+생년월일` 등
+                2. **조직 식별용**: `학교명`, `부서명` 등
+
+                **예시:**
+                - 키 컬럼 = `[이름, 학교]` 선택 시:
+                  ```
+                  파일1: 김철수, 춘천고등학교, 010-1234-5678
+                  파일2: 김철수, 춘천고등학교, 010-9999-9999
+                  → 같은 사람으로 판단 → 하나로 병합 (최신 정보 우선)
+                  ```
+
+                - 키 컬럼 = `[이름]`만 선택 시:
+                  ```
+                  파일1: 김철수, 춘천고등학교
+                  파일2: 김철수, 원주고등학교
+                  → 같은 사람으로 판단 (학교가 달라도!)
+                  ```
+
+                ---
+
+                #### ⚙️ 동작 원리
+
+                1. **정규화**: 공백 제거, 대소문자 통일
+                   - "김 철수" → "김철수"
+                   - "춘천 고등학교" → "춘천고등학교"
+
+                2. **중복 판단**: 키 컬럼의 값이 모두 같으면 중복
+                   - 키 컬럼 = [이름, 학교]
+                   - 행1: 이름=김철수, 학교=춘천고
+                   - 행2: 이름=김철수, 학교=춘천고
+                   - → **중복!** (두 키가 모두 같음)
+
+                3. **병합**: 중복된 행 중 가장 나중 파일의 정보를 사용
+
+                ---
+
+                #### 💡 권장 설정
+
+                | 상황 | 권장 키 컬럼 | 설명 |
+                |-----|------------|------|
+                | 교직원 명단 통합 | `이름`, `학교` | 같은 학교의 같은 이름만 중복 처리 |
+                | 개인 정보 통합 | `이름`, `생년월일` | 동명이인 구분 |
+                | 학교 정보 통합 | `학교명` | 학교 단위 중복 제거 |
+                | 중복 제거 안 함 | 비워두기 | 모든 행 유지 |
+
+                ---
+
+                #### ⚠️ 주의사항
+
+                - **키 컬럼을 선택하지 않으면**: 중복 제거를 하지 않습니다 (모든 행 유지)
+                - **너무 적은 키 컬럼**: 다른 사람도 같은 사람으로 인식될 수 있음
+                  - 예: `이름`만 선택 → 모든 "김철수"가 같은 사람으로 처리
+                - **너무 많은 키 컬럼**: 중복 제거가 잘 안 될 수 있음
+                  - 예: 모든 컬럼 선택 → 하나라도 다르면 다른 사람으로 인식
+                """)
 
             col1, col2 = st.columns([2, 1])
 
@@ -270,8 +367,14 @@ def main():
                     "키 컬럼 선택 (중복 판단 기준)",
                     options=sorted(list(all_columns)),
                     default=[],
-                    help="이름, 학교 등 고유성을 판단할 컬럼을 선택하세요"
+                    help="예: 이름, 학교 등을 선택하면 같은 이름+학교 조합은 중복으로 판단됩니다. 비워두면 중복 제거를 하지 않습니다."
                 )
+
+                # 도움말 표시
+                if not key_columns:
+                    st.info("💡 키 컬럼을 선택하지 않으면 중복 제거를 하지 않습니다 (모든 행 유지)")
+                else:
+                    st.success(f"✅ 선택된 키: {', '.join(key_columns)}\n\n이 컬럼들의 값이 모두 같으면 중복으로 판단합니다.")
 
             with col2:
                 st.metric("선택된 키 컬럼", len(key_columns))
@@ -499,13 +602,15 @@ def main():
 
     # 푸터
     st.divider()
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.caption("📧 문의: Excel Unifier")
-    with col2:
-        st.caption("🔗 GitHub: [caleblee2050/kfta_excel](https://github.com/caleblee2050/kfta_excel)")
-    with col3:
-        st.caption("⚡ Powered by Streamlit")
+    footer_col1, footer_col2, footer_col3, footer_col4 = st.columns(4)
+    with footer_col1:
+        st.caption(f"📌 버전 {__version__}")
+    with footer_col2:
+        st.caption(f"📅 {__release_date__}")
+    with footer_col3:
+        st.caption("🔗 [GitHub](https://github.com/caleblee2050/kfta_excel)")
+    with footer_col4:
+        st.caption("⚡ Powered by Streamlit + Gemini AI")
 
 
 if __name__ == '__main__':
