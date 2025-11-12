@@ -114,10 +114,10 @@ class ExcelUnifier:
         keyword_mappings = {
             # 강원교총 표준 매핑 (우선순위 높음)
             '현재교육청': ['현재교육청', '현 교육청', '소속교육청', '원교육청', '현재 교육청'],
-            '현재본청': ['현재본청', '현재 본청', '현재학교', '현 본청', '현재 학교', '소속학교', '소속본청'],
-            '대응': ['대응', '대 응'],
+            '현재본청': ['현재본청', '현재 본청', '현재학교', '현 본청', '현재 학교', '소속학교', '소속본청', '현재분회', '현재 분회'],
+            '대응': ['대응', '대 응', '이름', '성명'],
             '발령교육청': ['발령교육청', '발령 교육청', '전입교육청', '배치교육청', '발령교 육청'],
-            '발령본청': ['발령본청', '발령 본청', '전입학교', '배치학교', '발령학교', '발령 학교', '전보학교'],
+            '발령본청': ['발령본청', '발령 본청', '전입학교', '배치학교', '발령학교', '발령 학교', '전보학교', '발령분회', '발령 분회'],
             '과목': ['과목', '교과', '담당과목', '과 목', '교 과'],
             '직위': ['직위', '직 위', '보직', '직급'],
             '직종분류': ['직종분류', '직종 분류', '직종', '교원구분', '교사구분', '교직원구분'],
@@ -337,7 +337,7 @@ class ExcelUnifier:
 
             # KFTA 형식이고 파서가 사용 가능하면 특수 파싱 적용
             if output_format == 'kfta' and KFTAParser is not None:
-                parser = KFTAParser()
+                parser = KFTAParser(use_ai=self.use_ai, ai_matcher=self.ai_matcher)
                 df_unified = parser.parse_dataframe(df)
 
                 file_name = os.path.basename(df_info['path'])
@@ -347,7 +347,7 @@ class ExcelUnifier:
                 unified_data.append(df_unified)
                 continue
 
-            # 일반 매핑 방식
+            # KFTA 형식이지만 파서 미사용 시, 또는 일반 매핑 방식
             # 컬럼명 매핑
             rename_dict = {}
             for unified_col, original_cols in self.column_mappings.items():

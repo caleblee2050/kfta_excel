@@ -286,6 +286,116 @@ JSON만 출력하세요. 다른 설명은 불필요합니다.
 
         return value_groups
 
+    def verify_and_expand_school_name(
+        self,
+        school_name: str,
+        gangwon_regions: Dict[str, str]
+    ) -> Dict[str, str]:
+        """
+        AI를 사용하여 학교명 검증 및 확장
+        중고등학교의 경우 풀네임 확인 후 강원도 교육청 자동 매칭
+
+        Args:
+            school_name: 학교명 (약칭 또는 풀네임)
+            gangwon_regions: 강원도 지역명→교육청명 매핑 딕셔너리
+
+        Returns:
+            {
+                'full_name': 풀네임 학교명,
+                'education_office': 교육지원청명 (강원도 내 학교인 경우),
+                'region': 지역명,
+                'confidence': 신뢰도 (0-100),
+                'explanation': 설명
+            }
+        """
+        if not school_name or not school_name.strip():
+            return {
+                'full_name': school_name,
+                'education_office': '',
+                'region': '',
+                'confidence': 0,
+                'explanation': '빈 학교명'
+            }
+
+        cache_key = f"school_verify||{school_name}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # 강원도 지역 목록 생성
+        region_list = ', '.join(gangwon_regions.keys())
+
+        prompt = f"""
+당신은 강원도 교육청 전문가입니다. 학교명을 분석하여 다음 정보를 제공하세요.
+
+**입력 학교명**: "{school_name}"
+
+**강원도 지역 목록**: {region_list}
+
+**작업**:
+1. 학교명이 약칭인 경우 정식 명칭으로 확장하세요
+   예: "춘천공고" → "춘천공업고등학교"
+       "원주여고" → "원주여자고등학교"
+       "강릉고" → "강릉고등학교"
+       "삼척중" → "삼척중학교"
+
+2. 학교가 강원도 내 학교인지 확인하고, 해당 지역을 찾으세요
+   예: "춘천공업고등학교" → 춘천
+       "원주여자고등학교" → 원주
+       "강릉중앙초등학교" → 강릉
+
+3. 신뢰도를 계산하세요 (0-100)
+   - 강원도 내 실제 존재하는 학교: 90-100
+   - 강원도 내 학교로 추정: 70-89
+   - 강원도 외 지역 학교: 50-69
+   - 불명확: 0-49
+
+**응답 형식** (JSON):
+{{
+    "full_name": "정식 학교명 (확장된 풀네임)",
+    "region": "지역명 (강원도 지역 목록 중 하나, 없으면 빈 문자열)",
+    "confidence": 0-100 사이의 숫자,
+    "explanation": "판단 근거 설명"
+}}
+
+JSON만 출력하세요.
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            result_text = response.text.strip()
+
+            # JSON 파싱
+            if result_text.startswith('```json'):
+                result_text = result_text[7:]
+            if result_text.endswith('```'):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+
+            result = json.loads(result_text)
+
+            # 교육청명 추가
+            region = result.get('region', '')
+            education_office = ''
+            if region and region in gangwon_regions:
+                education_office = gangwon_regions[region]
+
+            result['education_office'] = education_office
+
+            # 캐시에 저장
+            self.cache[cache_key] = result
+
+            return result
+
+        except Exception as e:
+            print(f"⚠️  학교명 검증 실패 ({school_name}): {str(e)}")
+            return {
+                'full_name': school_name,
+                'education_office': '',
+                'region': '',
+                'confidence': 0,
+                'explanation': f'AI 분석 실패: {str(e)}'
+            }
+
 
 def test_gemini_matcher():
     """테스트 함수"""
