@@ -411,6 +411,46 @@ class KFTAParser:
         # 5. 매핑이 없으면 확장된 학교명 그대로 반환
         return (education_office, expanded_school)
 
+    def is_school_name(self, text: str) -> bool:
+        """
+        텍스트가 학교명인지 판단
+
+        Args:
+            text: 확인할 텍스트
+
+        Returns:
+            학교명이면 True, 아니면 False
+        """
+        if pd.isna(text) or not text:
+            return False
+
+        text = str(text).strip()
+
+        # 학교명 패턴 (초등학교, 중학교, 고등학교, 유치원 등)
+        school_patterns = [
+            '초등학교', '중학교', '고등학교', '유치원',
+            '초교', '중교', '고교',
+            '여중', '여고', '남중', '남고',
+            '공고', '상고', '농고', '정산고', '산과고',
+        ]
+
+        # 패턴 매칭
+        for pattern in school_patterns:
+            if pattern in text:
+                return True
+
+        # 끝나는 패턴 확인 (예: "춘천중", "원주고", "남산초")
+        if text.endswith('초') or text.endswith('중') or text.endswith('고'):
+            # 단, 한 글자는 제외 (예: "초"만 있는 경우)
+            if len(text) > 1:
+                return True
+
+        # 병설유치원 패턴
+        if '병설유' in text or '초유' in text:
+            return True
+
+        return False
+
     def expand_school_abbreviation(self, school_name: str) -> str:
         """
         학교 약칭을 정식 명칭으로 확장
@@ -699,11 +739,6 @@ class KFTAParser:
             position = str(row.iloc[4]).strip() if pd.notna(row.iloc[4]) else ''
             result['직위'] = self.normalize_position(position)
 
-        # 9번째 필드 → 과목 (중등교사 전용)
-        if len(row) > 8:
-            subject = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
-            result['과목'] = subject
-
         # 6번째 필드 → 발령분회 및 발령교육청
         if len(row) > 5:
             field_6 = str(row.iloc[5]).strip() if pd.notna(row.iloc[5]) else ''
@@ -826,6 +861,41 @@ class KFTAParser:
                             region = self.extract_region_from_text(field_8)
                             if region:
                                 result['현재교육청'] = self.get_education_office(region)
+
+        # 9번째 필드 → 과목 처리 (학교명 감지 및 이동)
+        # 이 부분은 발령분회/현재분회가 모두 처리된 후에 실행됨
+        if len(row) > 8:
+            subject_field = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
+
+            if subject_field:
+                # 학교명인지 확인
+                if self.is_school_name(subject_field):
+                    # 학교명을 올바른 형식으로 확장
+                    school_name = self.expand_school_abbreviation(subject_field)
+
+                    # 교육지원청 찾기
+                    edu_office = self.find_education_office_for_school(school_name)
+
+                    # 발령분회가 비어있으면 발령분회로 이동
+                    if not result['발령분회']:
+                        result['발령분회'] = school_name
+                        if edu_office:
+                            result['발령교육청'] = edu_office
+                    # 현재분회가 비어있으면 현재분회로 이동
+                    elif not result['현재분회']:
+                        result['현재분회'] = school_name
+                        if edu_office:
+                            result['현재교육청'] = edu_office
+                    # 둘 다 채워져 있으면 과목으로 유지 (예외 케이스)
+                    else:
+                        result['과목'] = subject_field
+
+                    # 과목 필드는 빈 문자열로 (학교명이 이동되었으므로)
+                    if result['발령분회'] == school_name or result['현재분회'] == school_name:
+                        result['과목'] = ''
+                else:
+                    # 학교명이 아니면 과목으로 그대로 유지
+                    result['과목'] = subject_field
 
         return result
 
