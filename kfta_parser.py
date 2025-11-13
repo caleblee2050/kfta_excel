@@ -91,6 +91,164 @@ class KFTAParser:
         '제일': '강원특별자치도강릉교육지원청',
     }
 
+    # 강원도 학교 데이터베이스 (중복 학교명 포함)
+    # 형식: {학교명: {교육청: 정식학교명}}
+    GANGWON_SCHOOL_DATABASE = {
+        # 중복 학교명 - 원당초등학교
+        '원당초등학교': {
+            '강원특별자치도홍천교육지원청': '홍천원당초등학교',
+            '강원특별자치도양구교육지원청': '양구원당초등학교',
+        },
+        '원당초': {
+            '강원특별자치도홍천교육지원청': '홍천원당초등학교',
+            '강원특별자치도양구교육지원청': '양구원당초등학교',
+        },
+        # 중복 학교명 - 신동초등학교
+        '신동초등학교': {
+            '강원특별자치도춘천교육지원청': '춘천신동초등학교',
+            '강원특별자치도삼척교육지원청': '삼척신동초등학교',
+        },
+        '신동초': {
+            '강원특별자치도춘천교육지원청': '춘천신동초등학교',
+            '강원특별자치도삼척교육지원청': '삼척신동초등학교',
+        },
+        # 중복 학교명 - 반곡초등학교
+        '반곡초등학교': {
+            '강원특별자치도원주교육지원청': '원주반곡초등학교',
+            '강원특별자치도홍천교육지원청': '홍천반곡초등학교',
+        },
+        '반곡초': {
+            '강원특별자치도원주교육지원청': '원주반곡초등학교',
+            '강원특별자치도홍천교육지원청': '홍천반곡초등학교',
+        },
+        # 중복 학교명 - 교동초등학교
+        '교동초등학교': {
+            '강원특별자치도춘천교육지원청': '춘천교동초등학교',
+            '강원특별자치도원주교육지원청': '원주교동초등학교',
+            '강원특별자치도강릉교육지원청': '강릉교동초등학교',
+            '강원특별자치도속초양양교육지원청': '속초교동초등학교',
+        },
+        '교동초': {
+            '강원특별자치도춘천교육지원청': '춘천교동초등학교',
+            '강원특별자치도원주교육지원청': '원주교동초등학교',
+            '강원특별자치도강릉교육지원청': '강릉교동초등학교',
+            '강원특별자치도속초양양교육지원청': '속초교동초등학교',
+        },
+        # 중복 학교명 - 속초초등학교
+        '속초초등학교': {
+            '강원특별자치도속초양양교육지원청': '속초초등학교',  # 속초는 그대로
+            '강원특별자치도홍천교육지원청': '홍천속초초등학교',
+        },
+        '속초초': {
+            '강원특별자치도속초양양교육지원청': '속초초등학교',
+            '강원특별자치도홍천교육지원청': '홍천속초초등학교',
+        },
+        # 중복 학교명 - 중앙초등학교
+        '중앙초등학교': {
+            '강원특별자치도춘천교육지원청': '춘천중앙초등학교',
+            '강원특별자치도원주교육지원청': '원주중앙초등학교',
+            '강원특별자치도강릉교육지원청': '강릉중앙초등학교',
+            '강원특별자치도속초양양교육지원청': '속초중앙초등학교',
+            '강원특별자치도삼척교육지원청': '삼척중앙초등학교',
+            '강원특별자치도동해교육지원청': '동해중앙초등학교',  # 동해중앙초는 기본 학교명
+        },
+        '중앙초': {
+            '강원특별자치도춘천교육지원청': '춘천중앙초등학교',
+            '강원특별자치도원주교육지원청': '원주중앙초등학교',
+            '강원특별자치도강릉교육지원청': '강릉중앙초등학교',
+            '강원특별자치도속초양양교육지원청': '속초중앙초등학교',
+            '강원특별자치도삼척교육지원청': '삼척중앙초등학교',
+            '강원특별자치도동해교육지원청': '동해중앙초등학교',
+        },
+        # 중복 학교명 - 조양초등학교
+        '조양초등학교': {
+            '강원특별자치도춘천교육지원청': '춘천조양초등학교',
+            '강원특별자치도속초양양교육지원청': '속초조양초등학교',
+        },
+        '조양초': {
+            '강원특별자치도춘천교육지원청': '춘천조양초등학교',
+            '강원특별자치도속초양양교육지원청': '속초조양초등학교',
+        },
+        # 중복 학교명 - 남산초등학교
+        '남산초등학교': {
+            '강원특별자치도춘천교육지원청': '춘천남산초등학교',
+            '강원특별자치도강릉교육지원청': '강릉남산초등학교',
+            '강원특별자치도홍천교육지원청': '홍천남산초등학교',
+        },
+        '남산초': {
+            '강원특별자치도춘천교육지원청': '춘천남산초등학교',
+            '강원특별자치도강릉교육지원청': '강릉남산초등학교',
+            '강원특별자치도홍천교육지원청': '홍천남산초등학교',
+        },
+    }
+
+    # 지역명 기반 학교명 검색 (역매핑)
+    # 형식: {지역명: {학교약칭: 정식학교명}}
+    REGION_SCHOOL_MAP = {
+        '홍천': {
+            '원당초': '홍천원당초등학교',
+            '원당초등학교': '홍천원당초등학교',
+            '반곡초': '홍천반곡초등학교',
+            '반곡초등학교': '홍천반곡초등학교',
+            '속초초': '홍천속초초등학교',
+            '속초초등학교': '홍천속초초등학교',
+            '남산초': '홍천남산초등학교',
+            '남산초등학교': '홍천남산초등학교',
+        },
+        '양구': {
+            '원당초': '양구원당초등학교',
+            '원당초등학교': '양구원당초등학교',
+        },
+        '춘천': {
+            '신동초': '춘천신동초등학교',
+            '신동초등학교': '춘천신동초등학교',
+            '교동초': '춘천교동초등학교',
+            '교동초등학교': '춘천교동초등학교',
+            '중앙초': '춘천중앙초등학교',
+            '중앙초등학교': '춘천중앙초등학교',
+            '조양초': '춘천조양초등학교',
+            '조양초등학교': '춘천조양초등학교',
+            '남산초': '춘천남산초등학교',
+            '남산초등학교': '춘천남산초등학교',
+        },
+        '삼척': {
+            '신동초': '삼척신동초등학교',
+            '신동초등학교': '삼척신동초등학교',
+            '중앙초': '삼척중앙초등학교',
+            '중앙초등학교': '삼척중앙초등학교',
+        },
+        '원주': {
+            '반곡초': '원주반곡초등학교',
+            '반곡초등학교': '원주반곡초등학교',
+            '교동초': '원주교동초등학교',
+            '교동초등학교': '원주교동초등학교',
+            '중앙초': '원주중앙초등학교',
+            '중앙초등학교': '원주중앙초등학교',
+        },
+        '강릉': {
+            '교동초': '강릉교동초등학교',
+            '교동초등학교': '강릉교동초등학교',
+            '중앙초': '강릉중앙초등학교',
+            '중앙초등학교': '강릉중앙초등학교',
+            '남산초': '강릉남산초등학교',
+            '남산초등학교': '강릉남산초등학교',
+        },
+        '속초': {
+            '교동초': '속초교동초등학교',
+            '교동초등학교': '속초교동초등학교',
+            '중앙초': '속초중앙초등학교',
+            '중앙초등학교': '속초중앙초등학교',
+            '조양초': '속초조양초등학교',
+            '조양초등학교': '속초조양초등학교',
+            '속초초': '속초초등학교',  # 속초는 그대로
+            '속초초등학교': '속초초등학교',
+        },
+        '동해': {
+            '중앙초': '동해중앙초등학교',
+            '중앙초등학교': '동해중앙초등학교',
+        },
+    }
+
     # 학교 약칭 매핑 (순서 중요: 긴 것부터)
     SCHOOL_ABBR_MAPPINGS = {
         '공고': '공업고등학교',
@@ -127,6 +285,8 @@ class KFTAParser:
         '특수학교 교사(초등)': '특수교사',
         '특수학교 교사(중등)': '특수교사',
         '특수학교교사': '특수교사',
+        '유치원 원감': '유치원감',
+        '유치원원감': '유치원감',
     }
 
     def __init__(self, use_ai: bool = False, ai_matcher=None):
@@ -204,6 +364,52 @@ class KFTAParser:
                 return self.MIDDLE_HIGH_SCHOOL_REGION_MAP[keyword]
 
         return ''
+
+    def lookup_school_with_region(self, region: str, school_name: str) -> tuple:
+        """
+        지역명과 학교명을 사용하여 정확한 학교명과 교육청 조회
+
+        Args:
+            region: 지역명 (예: "인제", "춘천", "양구")
+            school_name: 학교명 또는 약칭 (예: "원당초", "월학초유")
+
+        Returns:
+            (교육청명, 정식학교명) 튜플
+        """
+        if not region or not school_name:
+            return ('', school_name if school_name else '')
+
+        # 1. 지역명에서 교육청 찾기
+        education_office = self.get_education_office(region)
+
+        # 2. 학교 약칭 확장 (예: "월학초유" => "월학초등학교")
+        expanded_school = self.expand_school_abbreviation(school_name)
+
+        # 3. REGION_SCHOOL_MAP에서 지역별 학교명 검색
+        if region in self.REGION_SCHOOL_MAP:
+            region_schools = self.REGION_SCHOOL_MAP[region]
+
+            # 확장된 학교명으로 먼저 검색
+            if expanded_school in region_schools:
+                return (education_office, region_schools[expanded_school])
+
+            # 원본 학교명으로 검색
+            if school_name in region_schools:
+                return (education_office, region_schools[school_name])
+
+        # 4. GANGWON_SCHOOL_DATABASE에서 중복 학교명 검색
+        if expanded_school in self.GANGWON_SCHOOL_DATABASE:
+            school_mappings = self.GANGWON_SCHOOL_DATABASE[expanded_school]
+            if education_office in school_mappings:
+                return (education_office, school_mappings[education_office])
+
+        if school_name in self.GANGWON_SCHOOL_DATABASE:
+            school_mappings = self.GANGWON_SCHOOL_DATABASE[school_name]
+            if education_office in school_mappings:
+                return (education_office, school_mappings[education_office])
+
+        # 5. 매핑이 없으면 확장된 학교명 그대로 반환
+        return (education_office, expanded_school)
 
     def expand_school_abbreviation(self, school_name: str) -> str:
         """
@@ -362,10 +568,74 @@ class KFTAParser:
             print(f"  ⚠️  AI 검증 실패, 기본 모드로 전환: {str(e)}")
             return self.parse_abbreviated_school_format(school_name)
 
+    def parse_bigo_for_kindergarten(self, bigo_text: str) -> tuple:
+        """
+        유치원 신규원감 발령의 비고란 파싱
+
+        Args:
+            bigo_text: 비고란 텍스트 (예: "인제 월학초유 교사", "강원특별자치도교육청 유아교육과")
+
+        Returns:
+            (현재교육청, 현재분회) 튜플
+        """
+        if pd.isna(bigo_text) or not bigo_text:
+            return ('', '')
+
+        bigo_text = str(bigo_text).strip()
+
+        # 특수 케이스: "강원특별자치도교육청" 으로 시작하는 경우
+        if bigo_text.startswith('강원특별자치도교육청'):
+            return ('강원특별자치도춘천교육지원청', '강원특별자치도교육청')
+
+        # 일반 케이스: "지역명 학교명 직위" 형식
+        # 예: "인제 월학초유 교사"
+
+        # 지역명 추출 (공백으로 구분)
+        parts = bigo_text.split()
+        if len(parts) >= 2:
+            # 첫 번째 부분이 지역명인지 확인
+            potential_region = parts[0]
+
+            if potential_region in self.GANGWON_REGIONS:
+                # 지역명 발견
+                education_office = self.get_education_office(potential_region)
+
+                # 나머지 부분에서 학교명 추출 (직위 제거)
+                school_parts = parts[1:]
+                school_text = ' '.join(school_parts)
+
+                # 직위 키워드 제거 ("교사", "교장" 등)
+                position_keywords = ['교사', '교장', '교감', '원장', '원감']
+                for keyword in position_keywords:
+                    if school_text.endswith(keyword):
+                        school_text = school_text[:-len(keyword)].strip()
+                        break
+
+                # 학교명 확장 및 데이터베이스 검색
+                edu_office, full_school_name = self.lookup_school_with_region(
+                    potential_region,
+                    school_text
+                )
+
+                return (edu_office, full_school_name)
+
+        # 지역명 없이 학교명만 있는 경우 (예: "월학초유")
+        # 직위 키워드 제거
+        clean_text = bigo_text
+        position_keywords = ['교사', '교장', '교감', '원장', '원감']
+        for keyword in position_keywords:
+            if clean_text.endswith(keyword):
+                clean_text = clean_text[:-len(keyword)].strip()
+                break
+
+        # 학교 약칭 확장
+        expanded_school = self.expand_school_abbreviation(clean_text)
+        return ('', expanded_school)
+
     def is_valid_data_row(self, row: pd.Series, name_col_idx: int = 2) -> bool:
         """
         유효한 데이터 행인지 확인
-        3번째 열(인덱스 2)이 '성명'이 아니고 빈값도 아니면 True
+        3번째 열(인덱스 2)이 헤더 키워드가 아니고 빈값도 아니면 True
         """
         if len(row) <= name_col_idx:
             return False
@@ -376,9 +646,20 @@ class KFTAParser:
         if pd.isna(value) or str(value).strip() == "":
             return False
 
-        # '성명'이면 헤더 행이므로 False
-        if str(value).strip() == '성명':
+        # 헤더 키워드 목록 (대응, 성명, 이름 등)
+        header_keywords = ['성명', '이름', '대응', '대 응']
+        value_str = str(value).strip()
+
+        # 헤더 키워드와 정확히 일치하면 헤더 행으로 판단
+        if value_str in header_keywords:
             return False
+
+        # 추가: 비고 컬럼 확인 (4번째 열, 인덱스 3)
+        # 비고 컬럼이 "비고"라는 텍스트를 포함하면 헤더로 판단
+        if len(row) > 3:
+            bigo_value = str(row.iloc[3]).strip() if pd.notna(row.iloc[3]) else ""
+            if '비고' in bigo_value and '전소속' in bigo_value:
+                return False
 
         return True
 
@@ -464,8 +745,31 @@ class KFTAParser:
         if len(row) > 7:
             field_8 = str(row.iloc[7]).strip() if pd.notna(row.iloc[7]) else ''
 
-            # 8번째 필드가 지역명만 있는 경우
-            if self.is_region_name_only(field_8):
+            # 유치원 신규원감 발령 특수 처리
+            # 직위에 "유치원"과 "원감" 또는 "신규"가 포함된 경우
+            is_kindergarten_principal = False
+            if result['직위']:
+                position_lower = result['직위'].lower()
+                is_kindergarten = '유치원' in position_lower
+                is_principal = '원감' in position_lower or '신규' in position_lower
+                is_kindergarten_principal = is_kindergarten and is_principal
+
+            if is_kindergarten_principal and len(row) > 9:
+                # 유치원 신규원감의 경우 비고란(10번째 필드)에서 현재분회 정보 추출
+                field_10 = str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else ''
+
+                if field_10:
+                    edu_office, school_name = self.parse_bigo_for_kindergarten(field_10)
+                    if edu_office:
+                        result['현재교육청'] = edu_office
+                    if school_name:
+                        result['현재분회'] = school_name
+
+                    # 디버그 메시지 (선택사항)
+                    # print(f"  🏫 유치원 신규원감 파싱: '{field_10}' → 교육청={edu_office}, 분회={school_name}")
+
+            # 8번째 필드가 지역명만 있는 경우 (일반 케이스)
+            elif self.is_region_name_only(field_8):
                 # 10번째 필드(인덱스 9) 참고 - 비고란에 실제 학교명
                 if len(row) > 9:
                     field_10 = str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else ''
