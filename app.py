@@ -116,20 +116,71 @@ def main():
 
         # 출력 형식 선택
         st.subheader("📄 출력 형식")
-        output_format = st.radio(
-            "출력 파일 형식",
-            options=["kfta", "auto", "standard"],
+
+        # 라벨과 실제 값 매핑
+        format_labels = {
+            "📋 KFTA 표준 (권장)": "kfta",
+            "🔍 자동 감지": "auto",
+            "📊 일반 형식": "standard"
+        }
+
+        selected_label = st.radio(
+            "출력 형식을 선택하세요",
+            options=list(format_labels.keys()),
             index=0,
-            help="출력 파일의 컬럼 형식을 선택하세요",
-            horizontal=True
+            help="강원교총 표준 형식(KFTA)을 권장합니다",
+            horizontal=False
         )
 
+        # 실제 값으로 변환
+        output_format = format_labels[selected_label]
+
+        # 선택된 형식에 대한 상세 설명
         format_descriptions = {
-            "auto": "🔍 **자동 감지**: 입력 파일의 컬럼을 분석하여 자동으로 형식 결정",
-            "kfta": "📋 **강원교총 표준** (권장): 12개 표준 컬럼 형식\n- 현재교육청, 현재본청, 대응, 발령교육청, 발령본청, 과목, 직위, 직종분류, 분류명, 취급코드, 시군구분, 교호기호등",
-            "standard": "📊 **표준 형식**: 모든 컬럼 포함 (병합하지 않음)"
+            "kfta": """
+**📋 KFTA 표준 형식 (강원교총 표준)**
+
+✅ **12개 표준 컬럼**으로 구성:
+- `현재교육청` - 현재 소속 교육지원청
+- `현재분회` - 현재 소속 학교/기관
+- `이름` - 성명
+- `발령교육청` - 발령받은 교육지원청
+- `발령분회` - 발령받은 학교/기관
+- `과목` - 담당 과목 (중등)
+- `직위` - 교사/교감/교장/원감 등
+- `직종분류` - 교원 구분
+- `분류명` - 세부 분류
+- `취급코드` - 인사 코드
+- `시군구분` - 지역 구분
+- `교호기호등` - 학교 고유 기호
+
+💡 **자동 처리 기능**:
+- ✅ 중복 학교명 자동 해결 (원당초, 신동초, 교동초 등)
+- ✅ 유치원 신규원감 비고란 파싱
+- ✅ 학교 약칭 자동 확장 (OO초 → OO초등학교)
+- ✅ 교육지원청 자동 매칭
+            """,
+            "auto": """
+**🔍 자동 감지 형식**
+
+입력 파일의 컬럼을 자동으로 분석하여 적절한 형식을 결정합니다.
+
+- KFTA 컬럼이 감지되면 → KFTA 표준 형식 적용
+- 일반 컬럼만 있으면 → 일반 형식 유지
+            """,
+            "standard": """
+**📊 일반 형식**
+
+모든 입력 컬럼을 병합하지 않고 그대로 유지합니다.
+
+- 모든 원본 컬럼 포함
+- 컬럼명만 통일 (유사한 이름 자동 매칭)
+- KFTA 표준 변환 없음
+            """
         }
-        st.markdown(format_descriptions[output_format])
+
+        with st.expander("ℹ️ 선택한 형식 상세 정보", expanded=True):
+            st.markdown(format_descriptions[output_format])
 
         st.divider()
 
