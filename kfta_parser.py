@@ -760,6 +760,37 @@ class KFTAParser:
 
         return True
 
+    def extract_all_region_hints(self, row: pd.Series) -> dict:
+        """
+        행 데이터의 모든 필드에서 지역 힌트와 교육청 정보 추출
+
+        Returns:
+            {'regions': [지역명 리스트], 'education_offices': [교육청 리스트]}
+        """
+        regions = []
+        education_offices = []
+
+        # 모든 필드 스캔
+        for idx, value in enumerate(row):
+            if pd.isna(value):
+                continue
+
+            value_str = str(value).strip()
+
+            # 교육청 키워드 발견
+            if '교육청' in value_str or '교육지원청' in value_str:
+                education_offices.append(value_str)
+
+            # 지역명 발견
+            for region in self.GANGWON_REGIONS.keys():
+                if region in value_str:
+                    regions.append(region)
+
+        return {
+            'regions': list(set(regions)),  # 중복 제거
+            'education_offices': list(set(education_offices))
+        }
+
     def parse_row_to_kfta(self, row: pd.Series) -> Dict[str, str]:
         """
         행 데이터를 강원교총 표준 형식으로 변환
@@ -772,6 +803,9 @@ class KFTAParser:
         - 8번째 필드(인덱스 7) → 현재분회 (조건부, 약칭 확장)
         - 9번째 필드(인덱스 8) → 현재교육청/현재분회 참고
         """
+        # 먼저 행 전체에서 지역 및 교육청 힌트 추출
+        hints = self.extract_all_region_hints(row)
+
         result = {
             '현재교육청': '',
             '현재분회': '',
@@ -983,24 +1017,61 @@ class KFTAParser:
         # 2. 발령분회가 있으면 발령교육청 자동 채우기 (아직 비어있는 경우)
         if result['발령분회'] and not result['발령교육청']:
             edu_office = self.find_education_office_for_school(result['발령분회'])
+
             if not edu_office:
-                # 지역명 추출 시도
+                # 지역명 추출 시도 (학교명에서)
                 region = self.extract_region_from_text(result['발령분회'])
                 if region:
                     edu_office = self.get_education_office(region)
+
+            if not edu_office and hints['education_offices']:
+                # 행에서 발견된 교육청 정보 사용
+                edu_office = hints['education_offices'][0]
+
+            if not edu_office and hints['regions']:
+                # 행에서 발견된 지역 정보 사용
+                edu_office = self.get_education_office(hints['regions'][0])
+
             if edu_office:
                 result['발령교육청'] = edu_office
+            else:
+                # 디버깅: 매칭 실패한 학교 로그
+                print(f"⚠️ 교육청 매칭 실패 (발령분회): '{result['발령분회']}' | 힌트: regions={hints['regions']}, edu_offices={hints['education_offices']}")
 
         # 3. 현재분회가 있으면 현재교육청 자동 채우기 (아직 비어있는 경우)
         if result['현재분회'] and not result['현재교육청']:
             edu_office = self.find_education_office_for_school(result['현재분회'])
+
             if not edu_office:
-                # 지역명 추출 시도
+                # 지역명 추출 시도 (학교명에서)
                 region = self.extract_region_from_text(result['현재분회'])
                 if region:
                     edu_office = self.get_education_office(region)
+
+            if not edu_office and hints['education_offices']:
+                # 행에서 발견된 교육청 정보 사용 (발령교육청이 아직 사용 안 했으면)
+                for edu_off in hints['education_offices']:
+                    if edu_off != result.get('발령교육청', ''):
+                        edu_office = edu_off
+                        break
+                if not edu_office:
+                    edu_office = hints['education_offices'][0]
+
+            if not edu_office and hints['regions']:
+                # 행에서 발견된 지역 정보 사용
+                for region in hints['regions']:
+                    potential_edu = self.get_education_office(region)
+                    if potential_edu != result.get('발령교육청', ''):
+                        edu_office = potential_edu
+                        break
+                if not edu_office:
+                    edu_office = self.get_education_office(hints['regions'][0])
+
             if edu_office:
                 result['현재교육청'] = edu_office
+            else:
+                # 디버깅: 매칭 실패한 학교 로그
+                print(f"⚠️ 교육청 매칭 실패 (현재분회): '{result['현재분회']}' | 힌트: regions={hints['regions']}, edu_offices={hints['education_offices']}")
 
         # 4. 교육청 이름이 잘못된 필드에 있으면 제거
         # 교육청은 현재교육청, 발령교육청에만 들어가야 함
