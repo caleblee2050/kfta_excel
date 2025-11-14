@@ -16,7 +16,7 @@ import os
 from datetime import datetime
 
 # 버전 정보
-__version__ = "1.2.1"
+__version__ = "1.2.5"
 __release_date__ = "2025-11-13"
 
 
