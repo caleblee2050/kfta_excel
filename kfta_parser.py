@@ -341,10 +341,10 @@ class KFTAParser:
 
     def find_education_office_for_school(self, school_name: str) -> str:
         """
-        중고등학교명에서 교육지원청 찾기
+        학교명에서 교육지원청 찾기 (초/중/고/유치원 모두 지원)
 
         Args:
-            school_name: 학교명 (예: "홍천여중", "강릉제일고")
+            school_name: 학교명 (예: "홍천여중", "강릉제일고", "춘천남산초등학교", "속초유치원")
 
         Returns:
             교육지원청명 (예: "강원특별자치도홍천교육지원청")
@@ -354,7 +354,7 @@ class KFTAParser:
 
         school_name = str(school_name).strip()
 
-        # MIDDLE_HIGH_SCHOOL_REGION_MAP에서 키워드 매칭
+        # 1. MIDDLE_HIGH_SCHOOL_REGION_MAP에서 중고등학교 키워드 매칭
         # 긴 키워드부터 매칭 (예: "강릉제일"이 "강릉"보다 먼저)
         sorted_keywords = sorted(self.MIDDLE_HIGH_SCHOOL_REGION_MAP.keys(),
                                 key=len, reverse=True)
@@ -362,6 +362,35 @@ class KFTAParser:
         for keyword in sorted_keywords:
             if keyword in school_name:
                 return self.MIDDLE_HIGH_SCHOOL_REGION_MAP[keyword]
+
+        # 2. 초등학교/유치원: 학교명 앞부분에서 지역명 추출
+        # 예: "춘천남산초등학교" → "춘천" 추출
+        # 예: "강원특별자치도춘천교육지원청속초유치원" → "속초" 추출
+
+        # 강원도 지역명을 길이 역순으로 정렬 (긴 지역명부터 매칭)
+        sorted_regions = sorted(self.GANGWON_REGIONS.keys(), key=len, reverse=True)
+
+        for region in sorted_regions:
+            # 학교명이 지역명으로 시작하는지 확인
+            if school_name.startswith(region):
+                return self.get_education_office(region)
+
+            # 또는 학교명에 지역명이 포함되어 있는지 확인 (중간에 있을 수도 있음)
+            # 예: "홍천원당초등학교", "양구원당초등학교"
+            if region in school_name:
+                # 중복 학교명 데이터베이스에서 확인
+                if school_name in self.GANGWON_SCHOOL_DATABASE:
+                    edu_office = self.get_education_office(region)
+                    school_mappings = self.GANGWON_SCHOOL_DATABASE[school_name]
+                    if edu_office in school_mappings:
+                        # 중복 학교명이 맞는 경우에만 반환
+                        return edu_office
+                else:
+                    # 일반 학교명인 경우 첫 번째 매칭된 지역 반환
+                    # 단, 학교명 앞쪽에서 발견된 경우에만
+                    region_index = school_name.find(region)
+                    if region_index <= 10:  # 학교명 앞부분 10자 이내
+                        return self.get_education_office(region)
 
         return ''
 
