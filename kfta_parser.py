@@ -455,7 +455,44 @@ class KFTAParser:
 
         text = str(text).strip()
 
-        # 학교명 패턴 (초등학교, 중학교, 고등학교, 유치원 등)
+        # 1. 블랙리스트 체크 - 명확히 학교명이 아닌 것들
+        # 과목명
+        subject_blacklist = [
+            '국어', '영어', '수학', '과학', '사회', '역사', '도덕', '체육',
+            '음악', '미술', '실과', '기술', '가정', '한문', '정보',
+            '물리', '화학', '생물', '지구과학', '생명과학', '윤리',
+            '지리', '경제', '정치', '법과사회', '한국사', '세계사',
+            '문학', '독서', '작문', '문법', '화법', '논술',
+            '통합과학', '통합사회', '진로', '창체'
+        ]
+
+        # 직위/직종 관련 용어
+        position_blacklist = [
+            '교사', '교감', '교장', '원감', '원장', '수석교사',
+            '초등교사', '중등교사', '고등교사', '유치원교사',
+            '초등학교교사', '중등학교교사', '고등학교교사',
+            '특수교사', '보건교사', '영양교사', '사서교사',
+            '전문상담교사', '실기교사', '기간제교사',
+            '현 소 속', '발령', '전보', '승진', '임용'
+        ]
+
+        # 기타 제외 용어
+        other_blacklist = [
+            '신규', '재임용', '명예퇴직', '정년퇴직', '휴직', '복직',
+            '기타', '없음', '해당없음', '비고', '특이사항'
+        ]
+
+        # 블랙리스트 확인 (정확히 일치하거나 단독으로 나타나는 경우)
+        for blacklist_item in subject_blacklist + position_blacklist + other_blacklist:
+            if text == blacklist_item:
+                return False
+            # 직위 관련 용어가 포함되어 있고 학교 패턴이 없으면 제외
+            if blacklist_item in position_blacklist and blacklist_item in text:
+                # "중등학교교사", "초등교사" 같은 경우 제외
+                if not any(school_word in text for school_word in ['초등학교', '중학교', '고등학교', '유치원']):
+                    return False
+
+        # 2. 학교명 패턴 체크 (초등학교, 중학교, 고등학교, 유치원 등)
         school_patterns = [
             '초등학교', '중학교', '고등학교', '유치원',
             '초교', '중교', '고교',
@@ -463,22 +500,32 @@ class KFTAParser:
             '공고', '상고', '농고', '정산고', '산과고',
         ]
 
-        # 패턴 매칭
+        # 패턴 매칭 - 단순 포함이 아니라 학교명 패턴인지 확인
         for pattern in school_patterns:
             if pattern in text:
+                # "중등학교교사"처럼 직위가 붙은 경우 제외
+                if any(pos_word in text for pos_word in ['교사', '교감', '교장']):
+                    # 단, "OO중학교 교사"처럼 공백이 있으면 학교명으로 인정
+                    if ' ' in text:
+                        school_part = text.split()[0]
+                        if pattern in school_part:
+                            return True
+                    continue
                 return True
 
-        # 끝나는 패턴 확인 (예: "춘천중", "원주고", "남산초", "속초유")
+        # 3. 끝나는 패턴 확인 (예: "춘천중", "원주고", "남산초", "속초유")
         if text.endswith('초') or text.endswith('중') or text.endswith('고') or text.endswith('유'):
             # 단, 한 글자는 제외 (예: "초", "유"만 있는 경우)
             if len(text) > 1:
-                return True
+                # 과목명이 아닌지 확인 (예: "역사", "국어"는 제외)
+                if text not in subject_blacklist:
+                    return True
 
-        # 병설유치원 패턴
+        # 4. 병설유치원 패턴
         if '병설유' in text or '초유' in text:
             return True
 
-        # 정규표현식 패턴: 지역명(학교급) 형식
+        # 5. 정규표현식 패턴: 지역명(학교급) 형식
         # 예: 인제(고), 춘천(중), 속초(초), 원주(유)
         import re
         pattern = r'^[\w가-힣]+\((초|중|고|유)\)$'
@@ -834,38 +881,43 @@ class KFTAParser:
         if len(row) > 5:
             field_6 = str(row.iloc[5]).strip() if pd.notna(row.iloc[5]) else ''
 
-            # 중고등학교는 AI 검증 우선 시도 (use_ai=True인 경우)
-            is_middle_high = '중학' in field_6 or '고등' in field_6 or field_6.endswith('중') or field_6.endswith('고')
+            # 먼저 학교명인지 확인
+            if field_6 and self.is_school_name(field_6):
+                # 중고등학교는 AI 검증 우선 시도 (use_ai=True인 경우)
+                is_middle_high = '중학' in field_6 or '고등' in field_6 or field_6.endswith('중') or field_6.endswith('고')
 
-            if is_middle_high and self.use_ai:
-                # AI로 학교명 검증 및 확장
-                edu_office, school_name = self.verify_and_expand_with_ai(field_6)
-                if edu_office:
-                    result['발령교육청'] = edu_office
-                    result['발령분회'] = school_name
-                else:
-                    result['발령분회'] = school_name
-            else:
-                # "□□ OO초" 형식 파싱
-                edu_office, school_name = self.parse_abbreviated_school_format(field_6)
-
-                if edu_office:  # 약식 형식으로 파싱 성공
-                    result['발령교육청'] = edu_office
-                    result['발령분회'] = school_name
-                else:
-                    # 일반 형식 처리
-                    result['발령분회'] = self.expand_school_abbreviation(field_6)
-
-                    # 중고등학교 교육지원청 자동 매핑
-                    if is_middle_high:
-                        edu_office = self.find_education_office_for_school(result['발령분회'])
-                        if edu_office:
-                            result['발령교육청'] = edu_office
+                if is_middle_high and self.use_ai:
+                    # AI로 학교명 검증 및 확장
+                    edu_office, school_name = self.verify_and_expand_with_ai(field_6)
+                    if edu_office:
+                        result['발령교육청'] = edu_office
+                        result['발령분회'] = school_name
                     else:
-                        # 초등학교는 지역명 추출 → 발령교육청
-                        region = self.extract_region_from_text(field_6)
-                        if region:
-                            result['발령교육청'] = self.get_education_office(region)
+                        result['발령분회'] = school_name
+                else:
+                    # "□□ OO초" 형식 파싱
+                    edu_office, school_name = self.parse_abbreviated_school_format(field_6)
+
+                    if edu_office:  # 약식 형식으로 파싱 성공
+                        result['발령교육청'] = edu_office
+                        result['발령분회'] = school_name
+                    else:
+                        # 일반 형식 처리
+                        result['발령분회'] = self.expand_school_abbreviation(field_6)
+
+                        # 중고등학교 교육지원청 자동 매핑
+                        if is_middle_high:
+                            edu_office = self.find_education_office_for_school(result['발령분회'])
+                            if edu_office:
+                                result['발령교육청'] = edu_office
+                        else:
+                            # 초등학교는 지역명 추출 → 발령교육청
+                            region = self.extract_region_from_text(field_6)
+                            if region:
+                                result['발령교육청'] = self.get_education_office(region)
+            # field_6이 학교명이 아니면 과목으로 간주
+            elif field_6:
+                result['과목'] = field_6
 
         # 8번째 필드 처리
         if len(row) > 7:
@@ -900,7 +952,7 @@ class KFTAParser:
                 if len(row) > 9:
                     field_10 = str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else ''
 
-                    if field_10:  # 비고에 학교명이 있으면
+                    if field_10 and self.is_school_name(field_10):  # 비고에 학교명이 있으면
                         # 학교 약칭 확장
                         school_name = self.expand_school_abbreviation(field_10)
                         result['현재분회'] = school_name
@@ -919,7 +971,8 @@ class KFTAParser:
                         region_8 = self.extract_region_from_text(field_8)
                         if region_8:
                             result['현재교육청'] = self.get_education_office(region_8)
-            else:
+            # field_8이 학교명인지 확인
+            elif field_8 and self.is_school_name(field_8):
                 # 중고등학교는 AI 검증 우선 시도
                 is_middle_high = '중학' in field_8 or '고등' in field_8 or field_8.endswith('중') or field_8.endswith('고')
 
