@@ -439,14 +439,21 @@ class KFTAParser:
             if pattern in text:
                 return True
 
-        # 끝나는 패턴 확인 (예: "춘천중", "원주고", "남산초")
-        if text.endswith('초') or text.endswith('중') or text.endswith('고'):
-            # 단, 한 글자는 제외 (예: "초"만 있는 경우)
+        # 끝나는 패턴 확인 (예: "춘천중", "원주고", "남산초", "속초유")
+        if text.endswith('초') or text.endswith('중') or text.endswith('고') or text.endswith('유'):
+            # 단, 한 글자는 제외 (예: "초", "유"만 있는 경우)
             if len(text) > 1:
                 return True
 
         # 병설유치원 패턴
         if '병설유' in text or '초유' in text:
+            return True
+
+        # 정규표현식 패턴: 지역명(학교급) 형식
+        # 예: 인제(고), 춘천(중), 속초(초), 원주(유)
+        import re
+        pattern = r'^[\w가-힣]+\((초|중|고|유)\)$'
+        if re.match(pattern, text):
             return True
 
         return False
@@ -460,11 +467,32 @@ class KFTAParser:
             "신림초/교사" → "신림초등학교"
             "OO초병설유치원" → "OO초등학교"
             "속초유" → "속초유치원" (예외)
+            "인제(고)" → "인제고등학교"
+            "춘천(중)" → "춘천중학교"
+            "속초(유)" → "속초유치원"
         """
         if pd.isna(school_name) or not school_name:
             return school_name
 
         school_name = str(school_name).strip()
+
+        # 0. 정규표현식 패턴 처리: 지역명(학교급) 형식
+        # 예: 인제(고) → 인제고등학교
+        import re
+        pattern = r'^([\w가-힣]+)\((초|중|고|유)\)$'
+        match = re.match(pattern, school_name)
+        if match:
+            base_name = match.group(1)
+            school_type = match.group(2)
+
+            type_mapping = {
+                '초': '초등학교',
+                '중': '중학교',
+                '고': '고등학교',
+                '유': '유치원'
+            }
+
+            return base_name + type_mapping.get(school_type, '')
 
         # 1. /교사, /교장 등 직위 표기 제거
         if '/' in school_name:
@@ -896,6 +924,77 @@ class KFTAParser:
                 else:
                     # 학교명이 아니면 과목으로 그대로 유지
                     result['과목'] = subject_field
+
+        # ===== 최종 검증 및 정리 =====
+        # 모든 필드를 검사하여 학교명이 잘못된 위치에 있으면 올바른 위치로 이동
+
+        # 1. 과목 외의 다른 필드에서 학교명 검사
+        fields_to_check = ['직종분류', '분류명', '취급코드', '시군구분', '교호기호등']
+
+        for field_name in fields_to_check:
+            field_value = result.get(field_name, '')
+            if field_value and self.is_school_name(field_value):
+                # 학교명을 올바른 형식으로 확장
+                school_name = self.expand_school_abbreviation(field_value)
+                edu_office = self.find_education_office_for_school(school_name)
+
+                # 발령분회가 비어있으면 발령분회로 이동
+                if not result['발령분회']:
+                    result['발령분회'] = school_name
+                    if edu_office:
+                        result['발령교육청'] = edu_office
+                    result[field_name] = ''  # 원본 필드는 비우기
+                # 현재분회가 비어있으면 현재분회로 이동
+                elif not result['현재분회']:
+                    result['현재분회'] = school_name
+                    if edu_office:
+                        result['현재교육청'] = edu_office
+                    result[field_name] = ''  # 원본 필드는 비우기
+
+        # 2. 발령분회가 있으면 발령교육청 자동 채우기 (아직 비어있는 경우)
+        if result['발령분회'] and not result['발령교육청']:
+            edu_office = self.find_education_office_for_school(result['발령분회'])
+            if not edu_office:
+                # 지역명 추출 시도
+                region = self.extract_region_from_text(result['발령분회'])
+                if region:
+                    edu_office = self.get_education_office(region)
+            if edu_office:
+                result['발령교육청'] = edu_office
+
+        # 3. 현재분회가 있으면 현재교육청 자동 채우기 (아직 비어있는 경우)
+        if result['현재분회'] and not result['현재교육청']:
+            edu_office = self.find_education_office_for_school(result['현재분회'])
+            if not edu_office:
+                # 지역명 추출 시도
+                region = self.extract_region_from_text(result['현재분회'])
+                if region:
+                    edu_office = self.get_education_office(region)
+            if edu_office:
+                result['현재교육청'] = edu_office
+
+        # 4. 교육청 이름이 잘못된 필드에 있으면 제거
+        # 교육청은 현재교육청, 발령교육청에만 들어가야 함
+        education_office_keywords = ['교육청', '교육지원청']
+
+        for field_name in ['이름', '발령분회', '현재분회', '과목', '직위', '직종분류', '분류명', '취급코드', '시군구분', '교호기호등']:
+            field_value = result.get(field_name, '')
+            if field_value:
+                # 교육청 키워드가 있는지 확인
+                has_edu_office = any(keyword in field_value for keyword in education_office_keywords)
+
+                if has_edu_office:
+                    # 발령교육청이 비어있으면 이동
+                    if not result['발령교육청']:
+                        result['발령교육청'] = field_value
+                        result[field_name] = ''
+                    # 현재교육청이 비어있으면 이동
+                    elif not result['현재교육청']:
+                        result['현재교육청'] = field_value
+                        result[field_name] = ''
+                    # 둘 다 채워져 있으면 현재 필드에서 제거만
+                    else:
+                        result[field_name] = ''
 
         return result
 
