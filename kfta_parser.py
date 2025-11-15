@@ -289,14 +289,19 @@ class KFTAParser:
         '유치원원감': '유치원감',
     }
 
-    def __init__(self, use_ai: bool = False, ai_matcher=None):
+    def __init__(self, use_ai: bool = False, ai_matcher=None, use_web_search: bool = True):
         """
         Args:
             use_ai: AI 기반 학교명 검증 사용 여부
             ai_matcher: GeminiMatcher 인스턴스 (use_ai=True일 때 필요)
+            use_web_search: 웹 검색 기반 학교명 → 교육청 매핑 사용 여부
         """
         self.use_ai = use_ai
         self.ai_matcher = ai_matcher
+        self.use_web_search = use_web_search
+
+        # 학교명 → 교육청 매핑 캐시 (웹 검색 결과 저장)
+        self.school_edu_office_cache = {}
 
         if use_ai and not ai_matcher:
             try:
@@ -338,6 +343,75 @@ class KFTAParser:
     def get_education_office(self, region: str) -> str:
         """지역명으로 교육지원청명 가져오기"""
         return self.GANGWON_REGIONS.get(region, f'강원특별자치도{region}교육지원청')
+
+    def parse_school_with_position(self, text: str) -> tuple:
+        """
+        "xxx병설유 교사" 같은 패턴을 학교명과 직위로 분리
+
+        Args:
+            text: 텍스트 (예: "xxx병설유 교사", "OO초 교감", "춘천중학교 교장")
+
+        Returns:
+            (학교명, 직위) 튜플
+        """
+        if pd.isna(text) or not text:
+            return ('', '')
+
+        text = str(text).strip()
+
+        # 직위 키워드 목록
+        position_keywords = ['교사', '교감', '교장', '원감', '원장', '수석교사']
+
+        # 패턴 1: "xxx병설유 교사" 형식
+        # 예: "춘천병설유 교사" → ("춘천병설유치원", "교사")
+        for keyword in position_keywords:
+            if f' {keyword}' in text:  # 공백 + 직위
+                parts = text.split(f' {keyword}')
+                school_part = parts[0].strip()
+
+                # 학교명 확장
+                expanded_school = self.expand_school_abbreviation(school_part)
+                return (expanded_school, keyword)
+
+            # 패턴 2: 공백 없이 붙어있는 경우
+            if text.endswith(keyword):
+                # "춘천중학교교사" → ("춘천중학교", "교사")
+                school_part = text[:-len(keyword)].strip()
+
+                # 단, 학교 패턴이 있는지 확인
+                if self.is_school_name(school_part):
+                    expanded_school = self.expand_school_abbreviation(school_part)
+                    return (expanded_school, keyword)
+
+        # 직위가 없으면 전체를 학교명으로 반환
+        return (text, '')
+
+    def search_school_education_office(self, school_name: str) -> str:
+        """
+        캐시를 통해 학교명에 대한 교육지원청 찾기
+        (향후 웹 검색 기능 추가 예정)
+
+        Args:
+            school_name: 학교명 (예: "남산초등학교", "사북고등학교")
+
+        Returns:
+            교육지원청명 (찾지 못하면 빈 문자열)
+        """
+        if pd.isna(school_name) or not school_name:
+            return ''
+
+        school_name = str(school_name).strip()
+
+        # 캐시 확인
+        if school_name in self.school_edu_office_cache:
+            cached_result = self.school_edu_office_cache[school_name]
+            if cached_result:
+                print(f"  💾 캐시 적중: '{school_name}' → '{cached_result}'")
+            return cached_result
+
+        # TODO: 향후 웹 검색 기능 추가
+        # 현재는 빈 문자열 반환
+        return ''
 
     def find_education_office_for_school(self, school_name: str, hints: dict = None) -> str:
         """
@@ -409,13 +483,22 @@ class KFTAParser:
             # 앞 2글자가 지역명인지 확인
             potential_region = school_name[:2]
             if potential_region in self.GANGWON_REGIONS:
-                return self.get_education_office(potential_region)
+                result = self.get_education_office(potential_region)
+                self.school_edu_office_cache[school_name] = result  # 캐시 저장
+                return result
 
             # 앞 3글자가 지역명인지 확인
             if len(school_name) >= 5:
                 potential_region = school_name[:3]
                 if potential_region in self.GANGWON_REGIONS:
-                    return self.get_education_office(potential_region)
+                    result = self.get_education_office(potential_region)
+                    self.school_edu_office_cache[school_name] = result  # 캐시 저장
+                    return result
+
+        # 5. 캐시 검색 (이미 검색한 학교명)
+        cached = self.search_school_education_office(school_name)
+        if cached:
+            return cached
 
         return ''
 
@@ -1038,8 +1121,37 @@ class KFTAParser:
             subject_field = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
 
             if subject_field:
+                # 먼저 "xxx병설유 교사" 같은 패턴인지 확인
+                school_part, position_part = self.parse_school_with_position(subject_field)
+
+                if position_part:
+                    # "학교명 + 직위" 패턴이 감지됨
+                    print(f"  🏫 학교명+직위 분리: '{subject_field}' → 학교='{school_part}', 직위='{position_part}'")
+
+                    # 학교명 처리
+                    if school_part:
+                        edu_office = self.find_education_office_for_school(school_part, hints)
+
+                        # 발령분회가 비어있으면 발령분회로 이동
+                        if not result['발령분회']:
+                            result['발령분회'] = school_part
+                            if edu_office:
+                                result['발령교육청'] = edu_office
+                        # 현재분회가 비어있으면 현재분회로 이동
+                        elif not result['현재분회']:
+                            result['현재분회'] = school_part
+                            if edu_office:
+                                result['현재교육청'] = edu_office
+
+                    # 직위 처리 (직위 필드가 비어있으면 채우기)
+                    if not result['직위'] and position_part:
+                        result['직위'] = self.normalize_position(position_part)
+
+                    # 과목 필드는 비우기
+                    result['과목'] = ''
+
                 # 학교명인지 확인
-                if self.is_school_name(subject_field):
+                elif self.is_school_name(subject_field):
                     # 학교명을 올바른 형식으로 확장
                     school_name = self.expand_school_abbreviation(subject_field)
 
@@ -1075,23 +1187,46 @@ class KFTAParser:
 
         for field_name in fields_to_check:
             field_value = result.get(field_name, '')
-            if field_value and self.is_school_name(field_value):
-                # 학교명을 올바른 형식으로 확장
-                school_name = self.expand_school_abbreviation(field_value)
-                edu_office = self.find_education_office_for_school(school_name, hints)
+            if field_value:
+                # "학교명 + 직위" 패턴 먼저 확인
+                school_part, position_part = self.parse_school_with_position(field_value)
 
-                # 발령분회가 비어있으면 발령분회로 이동
-                if not result['발령분회']:
-                    result['발령분회'] = school_name
-                    if edu_office:
-                        result['발령교육청'] = edu_office
+                if position_part:
+                    # "학교명 + 직위" 패턴 감지
+                    if school_part:
+                        edu_office = self.find_education_office_for_school(school_part, hints)
+
+                        if not result['발령분회']:
+                            result['발령분회'] = school_part
+                            if edu_office:
+                                result['발령교육청'] = edu_office
+                        elif not result['현재분회']:
+                            result['현재분회'] = school_part
+                            if edu_office:
+                                result['현재교육청'] = edu_office
+
+                    if not result['직위'] and position_part:
+                        result['직위'] = self.normalize_position(position_part)
+
                     result[field_name] = ''  # 원본 필드는 비우기
-                # 현재분회가 비어있으면 현재분회로 이동
-                elif not result['현재분회']:
-                    result['현재분회'] = school_name
-                    if edu_office:
-                        result['현재교육청'] = edu_office
-                    result[field_name] = ''  # 원본 필드는 비우기
+
+                elif self.is_school_name(field_value):
+                    # 학교명을 올바른 형식으로 확장
+                    school_name = self.expand_school_abbreviation(field_value)
+                    edu_office = self.find_education_office_for_school(school_name, hints)
+
+                    # 발령분회가 비어있으면 발령분회로 이동
+                    if not result['발령분회']:
+                        result['발령분회'] = school_name
+                        if edu_office:
+                            result['발령교육청'] = edu_office
+                        result[field_name] = ''  # 원본 필드는 비우기
+                    # 현재분회가 비어있으면 현재분회로 이동
+                    elif not result['현재분회']:
+                        result['현재분회'] = school_name
+                        if edu_office:
+                            result['현재교육청'] = edu_office
+                        result[field_name] = ''  # 원본 필드는 비우기
 
         # 2. 발령분회가 있으면 발령교육청 자동 채우기 (아직 비어있는 경우)
         if result['발령분회'] and not result['발령교육청']:

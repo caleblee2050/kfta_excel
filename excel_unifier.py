@@ -336,7 +336,7 @@ class ExcelUnifier:
 
             # KFTA 형식이고 파서가 사용 가능하면 특수 파싱 적용
             if output_format == 'kfta' and KFTAParser is not None:
-                parser = KFTAParser(use_ai=self.use_ai, ai_matcher=self.ai_matcher)
+                parser = KFTAParser(use_ai=self.use_ai, ai_matcher=self.ai_matcher, use_web_search=True)
                 df_unified = parser.parse_dataframe(df)
 
                 file_name = os.path.basename(df_info['path'])
