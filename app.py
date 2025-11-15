@@ -16,8 +16,8 @@ import os
 from datetime import datetime
 
 # 버전 정보
-__version__ = "1.2.6"
-__release_date__ = "2025-11-14"
+__version__ = "1.2.7"
+__release_date__ = "2025-11-15"
 
 
 # 페이지 설정

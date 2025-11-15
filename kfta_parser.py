@@ -339,12 +339,13 @@ class KFTAParser:
         """지역명으로 교육지원청명 가져오기"""
         return self.GANGWON_REGIONS.get(region, f'강원특별자치도{region}교육지원청')
 
-    def find_education_office_for_school(self, school_name: str) -> str:
+    def find_education_office_for_school(self, school_name: str, hints: dict = None) -> str:
         """
         학교명에서 교육지원청 찾기 (초/중/고/유치원 모두 지원)
 
         Args:
             school_name: 학교명 (예: "홍천여중", "강릉제일고", "춘천남산초등학교", "속초유치원")
+            hints: 행 전체에서 추출한 힌트 정보 (regions, education_offices)
 
         Returns:
             교육지원청명 (예: "강원특별자치도홍천교육지원청")
@@ -370,20 +371,19 @@ class KFTAParser:
         # 강원도 지역명을 길이 역순으로 정렬 (긴 지역명부터 매칭)
         sorted_regions = sorted(self.GANGWON_REGIONS.keys(), key=len, reverse=True)
 
+        # 2-1. 학교명이 지역명으로 시작하는지 확인
         for region in sorted_regions:
-            # 학교명이 지역명으로 시작하는지 확인
             if school_name.startswith(region):
                 return self.get_education_office(region)
 
-            # 또는 학교명에 지역명이 포함되어 있는지 확인 (중간에 있을 수도 있음)
-            # 예: "홍천원당초등학교", "양구원당초등학교"
+        # 2-2. 학교명에 지역명이 포함되어 있는지 확인 (앞부분 우선)
+        for region in sorted_regions:
             if region in school_name:
                 # 중복 학교명 데이터베이스에서 확인
                 if school_name in self.GANGWON_SCHOOL_DATABASE:
                     edu_office = self.get_education_office(region)
                     school_mappings = self.GANGWON_SCHOOL_DATABASE[school_name]
                     if edu_office in school_mappings:
-                        # 중복 학교명이 맞는 경우에만 반환
                         return edu_office
                 else:
                     # 일반 학교명인 경우 첫 번째 매칭된 지역 반환
@@ -391,6 +391,31 @@ class KFTAParser:
                     region_index = school_name.find(region)
                     if region_index <= 10:  # 학교명 앞부분 10자 이내
                         return self.get_education_office(region)
+
+        # 3. Fallback: hints 정보에서 교육청 추출
+        if hints:
+            # 3-1. 교육청이 직접 명시된 경우
+            if hints.get('education_offices'):
+                return hints['education_offices'][0]
+
+            # 3-2. 지역명이 있는 경우
+            if hints.get('regions'):
+                return self.get_education_office(hints['regions'][0])
+
+        # 4. Fallback: 학교명에서 2글자 지역명 추출 시도 (앞 2글자)
+        # 예: "남산초등학교" → 실패하지만, "춘천남산초등학교"라면 이미 위에서 처리됨
+        # 하지만 "OO초등학교" 형식이라면 포기
+        if len(school_name) >= 4:
+            # 앞 2글자가 지역명인지 확인
+            potential_region = school_name[:2]
+            if potential_region in self.GANGWON_REGIONS:
+                return self.get_education_office(potential_region)
+
+            # 앞 3글자가 지역명인지 확인
+            if len(school_name) >= 5:
+                potential_region = school_name[:3]
+                if potential_region in self.GANGWON_REGIONS:
+                    return self.get_education_office(potential_region)
 
         return ''
 
@@ -907,14 +932,15 @@ class KFTAParser:
 
                         # 중고등학교 교육지원청 자동 매핑
                         if is_middle_high:
-                            edu_office = self.find_education_office_for_school(result['발령분회'])
+                            edu_office = self.find_education_office_for_school(result['발령분회'], hints)
                             if edu_office:
                                 result['발령교육청'] = edu_office
                         else:
-                            # 초등학교는 지역명 추출 → 발령교육청
-                            region = self.extract_region_from_text(field_6)
-                            if region:
-                                result['발령교육청'] = self.get_education_office(region)
+                            # 초등학교/유치원: 지역명 추출 → 발령교육청
+                            # find_education_office_for_school() 사용 (hints fallback 포함)
+                            edu_office = self.find_education_office_for_school(result['발령분회'], hints)
+                            if edu_office:
+                                result['발령교육청'] = edu_office
             # field_6이 학교명이 아니면 과목으로 간주
             elif field_6:
                 result['과목'] = field_6
@@ -958,7 +984,7 @@ class KFTAParser:
                         result['현재분회'] = school_name
 
                         # 중고등학교 교육지원청 자동 매핑
-                        edu_office = self.find_education_office_for_school(school_name)
+                        edu_office = self.find_education_office_for_school(school_name, hints)
                         if edu_office:
                             result['현재교육청'] = edu_office
                         else:
@@ -997,14 +1023,14 @@ class KFTAParser:
 
                         # 중고등학교 교육지원청 자동 매핑
                         if is_middle_high:
-                            edu_office = self.find_education_office_for_school(result['현재분회'])
+                            edu_office = self.find_education_office_for_school(result['현재분회'], hints)
                             if edu_office:
                                 result['현재교육청'] = edu_office
                         else:
-                            # 초등학교는 8번째 필드에서 지역명 추출 → 현재교육청
-                            region = self.extract_region_from_text(field_8)
-                            if region:
-                                result['현재교육청'] = self.get_education_office(region)
+                            # 초등학교/유치원: find_education_office_for_school() 사용 (hints fallback 포함)
+                            edu_office = self.find_education_office_for_school(result['현재분회'], hints)
+                            if edu_office:
+                                result['현재교육청'] = edu_office
 
         # 9번째 필드 → 과목 처리 (학교명 감지 및 이동)
         # 이 부분은 발령분회/현재분회가 모두 처리된 후에 실행됨
@@ -1018,7 +1044,7 @@ class KFTAParser:
                     school_name = self.expand_school_abbreviation(subject_field)
 
                     # 교육지원청 찾기
-                    edu_office = self.find_education_office_for_school(school_name)
+                    edu_office = self.find_education_office_for_school(school_name, hints)
 
                     # 발령분회가 비어있으면 발령분회로 이동
                     if not result['발령분회']:
@@ -1052,7 +1078,7 @@ class KFTAParser:
             if field_value and self.is_school_name(field_value):
                 # 학교명을 올바른 형식으로 확장
                 school_name = self.expand_school_abbreviation(field_value)
-                edu_office = self.find_education_office_for_school(school_name)
+                edu_office = self.find_education_office_for_school(school_name, hints)
 
                 # 발령분회가 비어있으면 발령분회로 이동
                 if not result['발령분회']:
@@ -1069,7 +1095,7 @@ class KFTAParser:
 
         # 2. 발령분회가 있으면 발령교육청 자동 채우기 (아직 비어있는 경우)
         if result['발령분회'] and not result['발령교육청']:
-            edu_office = self.find_education_office_for_school(result['발령분회'])
+            edu_office = self.find_education_office_for_school(result['발령분회'], hints)
 
             if not edu_office:
                 # 지역명 추출 시도 (학교명에서)
@@ -1093,7 +1119,7 @@ class KFTAParser:
 
         # 3. 현재분회가 있으면 현재교육청 자동 채우기 (아직 비어있는 경우)
         if result['현재분회'] and not result['현재교육청']:
-            edu_office = self.find_education_office_for_school(result['현재분회'])
+            edu_office = self.find_education_office_for_school(result['현재분회'], hints)
 
             if not edu_office:
                 # 지역명 추출 시도 (학교명에서)
