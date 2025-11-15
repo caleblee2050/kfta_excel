@@ -7,7 +7,10 @@ KFTA Excel Parser - 강원교총 전용 엑셀 파서
 
 import pandas as pd
 import re
+import json
+import os
 from typing import Dict, List, Optional
+from datetime import datetime
 
 
 class KFTAParser:
@@ -432,6 +435,13 @@ class KFTAParser:
         # 학교명 → 교육청 매핑 캐시 (웹 검색 결과 저장)
         self.school_edu_office_cache = {}
 
+        # 학습된 매핑 파일 경로
+        self.learned_mappings_file = 'learned_school_mappings.json'
+        self.failed_mappings_log = 'failed_mappings.log'
+
+        # 학습된 매핑 자동 로드
+        self.load_learned_mappings()
+
         if use_ai and not ai_matcher:
             try:
                 from ai_matcher import GeminiMatcher
@@ -441,6 +451,69 @@ class KFTAParser:
             except Exception as e:
                 print(f"⚠️  AI 모드 초기화 실패: {str(e)}")
                 self.use_ai = False
+
+    def load_learned_mappings(self):
+        """학습된 학교→교육청 매핑을 JSON 파일에서 로드"""
+        if os.path.exists(self.learned_mappings_file):
+            try:
+                with open(self.learned_mappings_file, 'r', encoding='utf-8') as f:
+                    learned = json.load(f)
+                    self.school_edu_office_cache.update(learned)
+                    print(f"📚 학습된 매핑 {len(learned)}개 로드 완료")
+            except Exception as e:
+                print(f"⚠️  학습된 매핑 로드 실패: {str(e)}")
+        else:
+            print("📚 학습된 매핑 파일 없음 (새로 시작)")
+
+    def save_learned_mapping(self, school_name: str, education_office: str):
+        """성공한 매핑을 JSON 파일에 저장 (자동 학습)"""
+        if not school_name or not education_office:
+            return
+
+        # 이미 GANGWON_ALL_SCHOOLS에 있으면 저장 안 함 (중복 방지)
+        if school_name in self.GANGWON_ALL_SCHOOLS:
+            return
+
+        # 캐시에 추가
+        self.school_edu_office_cache[school_name] = education_office
+
+        # 파일에 저장
+        try:
+            # 기존 데이터 로드
+            if os.path.exists(self.learned_mappings_file):
+                with open(self.learned_mappings_file, 'r', encoding='utf-8') as f:
+                    learned = json.load(f)
+            else:
+                learned = {}
+
+            # 새로운 매핑 추가
+            learned[school_name] = education_office
+
+            # 파일에 저장
+            with open(self.learned_mappings_file, 'w', encoding='utf-8') as f:
+                json.dump(learned, f, ensure_ascii=False, indent=2)
+
+            print(f"  💾 학습 저장: '{school_name}' → '{education_office}'")
+
+        except Exception as e:
+            print(f"⚠️  매핑 저장 실패: {str(e)}")
+
+    def log_failed_mapping(self, school_name: str, hints: dict = None):
+        """실패한 매핑을 로그 파일에 기록"""
+        if not school_name:
+            return
+
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            hints_str = f"regions={hints.get('regions', [])}, edu_offices={hints.get('education_offices', [])}" if hints else "no hints"
+
+            log_entry = f"[{timestamp}] 매핑 실패: '{school_name}' | {hints_str}\n"
+
+            with open(self.failed_mappings_log, 'a', encoding='utf-8') as f:
+                f.write(log_entry)
+
+        except Exception as e:
+            print(f"⚠️  실패 로그 기록 실패: {str(e)}")
 
     def is_region_name_only(self, text: str) -> bool:
         """텍스트가 지역명만 있는지 확인"""
@@ -572,7 +645,9 @@ class KFTAParser:
 
         for keyword in sorted_keywords:
             if keyword in school_name:
-                return self.MIDDLE_HIGH_SCHOOL_REGION_MAP[keyword]
+                result = self.MIDDLE_HIGH_SCHOOL_REGION_MAP[keyword]
+                self.save_learned_mapping(school_name, result)  # 자동 학습
+                return result
 
         # 2. 초등학교/유치원: 학교명 앞부분에서 지역명 추출
         # 예: "춘천남산초등학교" → "춘천" 추출
@@ -584,7 +659,9 @@ class KFTAParser:
         # 2-1. 학교명이 지역명으로 시작하는지 확인
         for region in sorted_regions:
             if school_name.startswith(region):
-                return self.get_education_office(region)
+                result = self.get_education_office(region)
+                self.save_learned_mapping(school_name, result)  # 자동 학습
+                return result
 
         # 2-2. 학교명에 지역명이 포함되어 있는지 확인 (앞부분 우선)
         for region in sorted_regions:
@@ -594,23 +671,30 @@ class KFTAParser:
                     edu_office = self.get_education_office(region)
                     school_mappings = self.GANGWON_SCHOOL_DATABASE[school_name]
                     if edu_office in school_mappings:
+                        self.save_learned_mapping(school_name, edu_office)  # 자동 학습
                         return edu_office
                 else:
                     # 일반 학교명인 경우 첫 번째 매칭된 지역 반환
                     # 단, 학교명 앞쪽에서 발견된 경우에만
                     region_index = school_name.find(region)
                     if region_index <= 10:  # 학교명 앞부분 10자 이내
-                        return self.get_education_office(region)
+                        result = self.get_education_office(region)
+                        self.save_learned_mapping(school_name, result)  # 자동 학습
+                        return result
 
         # 3. Fallback: hints 정보에서 교육청 추출
         if hints:
             # 3-1. 교육청이 직접 명시된 경우
             if hints.get('education_offices'):
-                return hints['education_offices'][0]
+                result = hints['education_offices'][0]
+                self.save_learned_mapping(school_name, result)  # 자동 학습
+                return result
 
             # 3-2. 지역명이 있는 경우
             if hints.get('regions'):
-                return self.get_education_office(hints['regions'][0])
+                result = self.get_education_office(hints['regions'][0])
+                self.save_learned_mapping(school_name, result)  # 자동 학습
+                return result
 
         # 4. Fallback: 학교명에서 2글자 지역명 추출 시도 (앞 2글자)
         # 예: "남산초등학교" → 실패하지만, "춘천남산초등학교"라면 이미 위에서 처리됨
@@ -636,6 +720,8 @@ class KFTAParser:
         if cached:
             return cached
 
+        # 6. 모든 방법 실패 → 로그 기록
+        self.log_failed_mapping(school_name, hints)
         return ''
 
     def lookup_school_with_region(self, region: str, school_name: str) -> tuple:
