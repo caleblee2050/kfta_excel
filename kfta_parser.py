@@ -529,6 +529,56 @@ class KFTAParser:
 
         return False
 
+    def remove_region_prefix_from_school_name(self, school_name: str) -> str:
+        """
+        학교명 앞의 지역명 제거
+        예: "춘천남산초등학교" → "남산초등학교"
+            "강릉중앙초등학교" → "중앙초등학교"
+
+        Args:
+            school_name: 학교명
+
+        Returns:
+            지역명이 제거된 학교명
+        """
+        if pd.isna(school_name) or not school_name:
+            return school_name
+
+        school_name = str(school_name).strip()
+
+        # 강원도 지역명을 길이 역순으로 정렬 (긴 지역명부터 매칭)
+        sorted_regions = sorted(self.GANGWON_REGIONS.keys(), key=len, reverse=True)
+
+        for region in sorted_regions:
+            if school_name.startswith(region):
+                # 지역명 제거
+                return school_name[len(region):]
+
+        return school_name
+
+    def is_duplicate_school_name(self, school_name: str) -> bool:
+        """
+        중복 학교명인지 확인 (GANGWON_SCHOOL_DATABASE에 정의된)
+
+        Args:
+            school_name: 학교명 (예: "남산초등학교", "중앙초")
+
+        Returns:
+            중복 학교명이면 True
+        """
+        if pd.isna(school_name) or not school_name:
+            return False
+
+        school_name = str(school_name).strip()
+
+        # GANGWON_SCHOOL_DATABASE에서 확인
+        if school_name in self.GANGWON_SCHOOL_DATABASE:
+            # 2개 이상의 교육청에 매핑되어 있으면 중복
+            if len(self.GANGWON_SCHOOL_DATABASE[school_name]) > 1:
+                return True
+
+        return False
+
     def extract_region_from_text(self, text: str) -> Optional[str]:
         """텍스트에서 강원도 지역명 추출"""
         if pd.isna(text):
@@ -882,9 +932,19 @@ class KFTAParser:
 
         school_name = str(school_name).strip()
 
-        # 0. 정규표현식 패턴 처리: 지역명(학교급) 형식
-        # 예: 인제(고) → 인제고등학교
+        # 0-1. 분교 표기 처리: 학교명(분교명) 형식
+        # 예: 남산(서천)초등학교 → 남산초등학교 서천분교
         import re
+        branch_pattern = r'^([\w가-힣]+)\(([\w가-힣]+)\)(초등학교|중학교|고등학교)$'
+        branch_match = re.match(branch_pattern, school_name)
+        if branch_match:
+            main_school = branch_match.group(1)
+            branch_name = branch_match.group(2)
+            school_type = branch_match.group(3)
+            return f"{main_school}{school_type} {branch_name}분교"
+
+        # 0-2. 정규표현식 패턴 처리: 지역명(학교급) 형식
+        # 예: 인제(고) → 인제고등학교
         pattern = r'^([\w가-힣]+)\((초|중|고|유)\)$'
         match = re.match(pattern, school_name)
         if match:
@@ -903,6 +963,15 @@ class KFTAParser:
         # 1. /교사, /교장 등 직위 표기 제거
         if '/' in school_name:
             school_name = school_name.split('/')[0].strip()
+
+        # 1.5. 특정 유치원 약칭 처리
+        # "새들유" → "새들유치원"
+        # "홍천남산유" → "홍천남산유치원"
+        # "OO유" → "OO유치원" (단, 병설유, 초유, 속초유 제외)
+        if school_name.endswith('유') and not school_name.endswith('병설유') and not school_name.endswith('초유') and school_name != '속초유':
+            # 2글자 이상이면 유치원으로 확장
+            if len(school_name) >= 2:
+                return school_name + '치원'
 
         # 2. 병설유치원 처리
         # OO초병설유치원 → OO초등학교
@@ -1120,19 +1189,34 @@ class KFTAParser:
         if pd.isna(value) or str(value).strip() == "":
             return False
 
-        # 헤더 키워드 목록 (대응, 성명, 이름 등)
-        header_keywords = ['성명', '이름', '대응', '대 응']
+        # 헤더 키워드 목록 (대응, 성명, 이름, 비고, 발령사항 등)
+        header_keywords = ['성명', '이름', '대응', '대 응', '비고', '발령사항', '발령', '현소속', '현 소속']
         value_str = str(value).strip()
 
         # 헤더 키워드와 정확히 일치하면 헤더 행으로 판단
         if value_str in header_keywords:
             return False
 
-        # 추가: 비고 컬럼 확인 (4번째 열, 인덱스 3)
+        # 추가: 행 전체에서 여러 헤더 키워드가 나타나면 헤더로 판단
+        header_count = 0
+        for idx, cell in enumerate(row):
+            if pd.notna(cell):
+                cell_str = str(cell).strip()
+                if cell_str in header_keywords:
+                    header_count += 1
+
+        # 3개 이상의 헤더 키워드가 있으면 헤더 행으로 판단
+        if header_count >= 3:
+            return False
+
+        # 비고 컬럼 확인 (4번째 열, 인덱스 3)
         # 비고 컬럼이 "비고"라는 텍스트를 포함하면 헤더로 판단
         if len(row) > 3:
             bigo_value = str(row.iloc[3]).strip() if pd.notna(row.iloc[3]) else ""
             if '비고' in bigo_value and '전소속' in bigo_value:
+                return False
+            # 비고만 있어도 헤더일 가능성 높음
+            if bigo_value == '비고':
                 return False
 
         return True
@@ -1191,16 +1275,14 @@ class KFTAParser:
             '발령분회': '',
             '과목': '',
             '직위': '',
-            '직종분류': '',
-            '분류명': '',
-            '취급코드': '',
-            '시군구분': '',
-            '교호기호등': '',
+            '비고': '',
         }
 
-        # 3번째 필드 → 이름 (성명)
+        # 3번째 필드 → 이름 (성명) - 공백 제거
         if len(row) > 2:
-            result['이름'] = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ''
+            name = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ''
+            # 이름 사이의 공백 제거 (예: "이  준" → "이준")
+            result['이름'] = name.replace(' ', '')
 
         # 5번째 필드 → 직위 (정규화 적용)
         if len(row) > 4:
@@ -1402,53 +1484,16 @@ class KFTAParser:
                     result['과목'] = subject_field
 
         # ===== 최종 검증 및 정리 =====
-        # 모든 필드를 검사하여 학교명이 잘못된 위치에 있으면 올바른 위치로 이동
 
-        # 1. 과목 외의 다른 필드에서 학교명 검사
-        fields_to_check = ['직종분류', '분류명', '취급코드', '시군구분', '교호기호등']
-
-        for field_name in fields_to_check:
-            field_value = result.get(field_name, '')
-            if field_value:
-                # "학교명 + 직위" 패턴 먼저 확인
-                school_part, position_part = self.parse_school_with_position(field_value)
-
-                if position_part:
-                    # "학교명 + 직위" 패턴 감지
-                    if school_part:
-                        edu_office = self.find_education_office_for_school(school_part, hints)
-
-                        if not result['발령분회']:
-                            result['발령분회'] = school_part
-                            if edu_office:
-                                result['발령교육청'] = edu_office
-                        elif not result['현재분회']:
-                            result['현재분회'] = school_part
-                            if edu_office:
-                                result['현재교육청'] = edu_office
-
-                    if not result['직위'] and position_part:
-                        result['직위'] = self.normalize_position(position_part)
-
-                    result[field_name] = ''  # 원본 필드는 비우기
-
-                elif self.is_school_name(field_value):
-                    # 학교명을 올바른 형식으로 확장
-                    school_name = self.expand_school_abbreviation(field_value)
-                    edu_office = self.find_education_office_for_school(school_name, hints)
-
-                    # 발령분회가 비어있으면 발령분회로 이동
-                    if not result['발령분회']:
-                        result['발령분회'] = school_name
-                        if edu_office:
-                            result['발령교육청'] = edu_office
-                        result[field_name] = ''  # 원본 필드는 비우기
-                    # 현재분회가 비어있으면 현재분회로 이동
-                    elif not result['현재분회']:
-                        result['현재분회'] = school_name
-                        if edu_office:
-                            result['현재교육청'] = edu_office
-                        result[field_name] = ''  # 원본 필드는 비우기
+        # 1. 과목 필드에서 '휴직복직', '파견복귀' 등을 비고로 이동
+        gwanri_keywords = ['휴직복직', '파견복귀', '휴직', '복직', '파견', '복귀']
+        if result['과목']:
+            for keyword in gwanri_keywords:
+                if keyword in result['과목']:
+                    # 비고로 이동
+                    result['비고'] = result['과목']
+                    result['과목'] = ''
+                    break
 
         # 2. 발령분회가 있으면 발령교육청 자동 채우기 (아직 비어있는 경우)
         if result['발령분회'] and not result['발령교육청']:
@@ -1513,7 +1558,7 @@ class KFTAParser:
         # 교육청은 현재교육청, 발령교육청에만 들어가야 함
         education_office_keywords = ['교육청', '교육지원청']
 
-        for field_name in ['이름', '발령분회', '현재분회', '과목', '직위', '직종분류', '분류명', '취급코드', '시군구분', '교호기호등']:
+        for field_name in ['이름', '발령분회', '현재분회', '과목', '직위', '비고']:
             field_value = result.get(field_name, '')
             if field_value:
                 # 교육청 키워드가 있는지 확인
@@ -1531,6 +1576,21 @@ class KFTAParser:
                     # 둘 다 채워져 있으면 현재 필드에서 제거만
                     else:
                         result[field_name] = ''
+
+        # 5. 현재분회와 발령분회에서 지역명 제거
+        if result['현재분회']:
+            result['현재분회'] = self.remove_region_prefix_from_school_name(result['현재분회'])
+
+        if result['발령분회']:
+            result['발령분회'] = self.remove_region_prefix_from_school_name(result['발령분회'])
+
+        # 6. 중복 학교명인 경우 교육청을 비우기
+        # 남산초, 중앙초, 조양초, 교동초 등이 여러 지역에 있는 경우
+        if result['현재분회'] and self.is_duplicate_school_name(result['현재분회']):
+            result['현재교육청'] = ''
+
+        if result['발령분회'] and self.is_duplicate_school_name(result['발령분회']):
+            result['발령교육청'] = ''
 
         return result
 
