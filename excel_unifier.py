@@ -499,7 +499,56 @@ class ExcelUnifier:
         print(f"\n💾 결과 저장 중: {output_path}")
 
         # 엑셀로 저장
-        df.to_excel(output_path, index=False, engine='openpyxl')
+        # Fix 3: 제목줄 삽입 (붉은색 표시)
+        # openpyxl을 사용하여 제목줄 추가 및 스타일링
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils.dataframe import dataframe_to_rows
+            
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "통합결과"
+            
+            # 1. 제목줄 추가 (1행)
+            # "2025. 3. 1.자 유․특수․초등․중등 교(원)감, 교사 인사발령 현황 "
+            title_text = "2025. 3. 1.자 유․특수․초등․중등 교(원)감, 교사 인사발령 현황"
+            ws.merge_cells('A1:L1')  # A부터 L까지 병합 (12개 컬럼 기준)
+            cell = ws['A1']
+            cell.value = title_text
+            cell.font = Font(size=14, bold=True, color="FF0000")  # 붉은색 글씨
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # 2. 데이터 프레임 헤더 추가 (2행)
+            for col_idx, column_title in enumerate(df.columns, 1):
+                cell = ws.cell(row=2, column=col_idx, value=column_title)
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+                cell.alignment = Alignment(horizontal='center')
+                # 테두리 설정
+                thin_border = Border(left=Side(style='thin'), 
+                                    right=Side(style='thin'), 
+                                    top=Side(style='thin'), 
+                                    bottom=Side(style='thin'))
+                cell.border = thin_border
+
+            # 3. 데이터 추가 (3행부터)
+            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=False), 3):
+                for c_idx, value in enumerate(row, 1):
+                    cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                    cell.border = thin_border
+                    
+            # 컬럼 너비 자동 조정 (대략적)
+            for column_cells in ws.columns:
+                length = max(len(str(cell.value) or "") for cell in column_cells)
+                ws.column_dimensions[column_cells[0].column_letter].width = min(length + 2, 50)
+                
+            wb.save(output_path)
+            
+        except ImportError:
+            # openpyxl이 없으면 기본 pandas 저장 사용
+            print("⚠️ openpyxl이 설치되지 않아 기본 저장 방식을 사용합니다.")
+            df.to_excel(output_path, index=False, engine='openpyxl')
 
         print(f"  ✓ 저장 완료: {len(df)}행, {len(df.columns)}개 컬럼")
 

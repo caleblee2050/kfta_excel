@@ -540,7 +540,11 @@ class KFTAParser:
         '호반초등학교': '강원특별자치도춘천교육지원청',
         '효제초등학교': '강원특별자치도춘천교육지원청',
         '후평중학교': '강원특별자치도춘천교육지원청',
+        '후평중학교': '강원특별자치도춘천교육지원청',
         '후평초등학교': '강원특별자치도춘천교육지원청',
+        '온의유치원': '강원특별자치도춘천교육지원청',
+        '춘천동원학교': '강원특별자치도춘천교육지원청',
+        '춘천계성학교': '강원특별자치도춘천교육지원청',
 
         # === 태백 (26개) ===
         '동점초등학교': '강원특별자치도태백교육지원청',
@@ -1097,9 +1101,17 @@ class KFTAParser:
         sorted_regions = sorted(self.GANGWON_REGIONS.keys(), key=len, reverse=True)
 
         for region in sorted_regions:
-            if school_name.startswith(region):
-                # 지역명 제거
-                return school_name[len(region):]
+            # Fix 2: 지역명 뒤에 공백이 있는 경우에만 제거 (예: "춘천 " -> "")
+            # "춘천초등학교" -> "춘천초등학교" (유지)
+            # "춘천 초등학교" -> "초등학교" (제거)
+            prefix_with_space = region + " "
+            if school_name.startswith(prefix_with_space):
+                return school_name[len(prefix_with_space):].strip()
+            
+            # 예외: "철원 새들유치원" -> "새들유치원" (이미 위 로직으로 커버됨)
+            
+            # 기존 로직 (지역명만 붙어있는 경우)은 제거하지 않음으로 변경됨
+            # if school_name.startswith(region): ...
 
         return school_name
 
@@ -1141,6 +1153,10 @@ class KFTAParser:
 
     def get_education_office(self, region: str) -> str:
         """지역명으로 교육지원청명 가져오기"""
+        # Fix 4: 타시도의 경우 교육지원청은 공란으로
+        if region not in self.GANGWON_REGIONS:
+            return ''
+            
         return self.GANGWON_REGIONS.get(region, f'강원특별자치도{region}교육지원청')
 
     def parse_school_with_position(self, text: str) -> tuple:
@@ -1421,7 +1437,7 @@ class KFTAParser:
 
         # 2. 학교명 패턴 체크 (초등학교, 중학교, 고등학교, 유치원 등)
         school_patterns = [
-            '초등학교', '중학교', '고등학교', '유치원',
+            '초등학교', '중학교', '고등학교', '유치원', '학교',
             '초교', '중교', '고교',
             '여중', '여고', '남중', '남고',
             '공고', '상고', '농고', '정산고', '산과고',
@@ -1431,7 +1447,7 @@ class KFTAParser:
         for pattern in school_patterns:
             if pattern in text:
                 # "중등학교교사"처럼 직위가 붙은 경우 제외
-                if any(pos_word in text for pos_word in ['교사', '교감', '교장']):
+                if any(pos_word in text for pos_word in ['교사', '교감', '교장', '원감', '원장']):
                     # 단, "OO중학교 교사"처럼 공백이 있으면 학교명으로 인정
                     if ' ' in text:
                         school_part = text.split()[0]
@@ -1961,10 +1977,56 @@ class KFTAParser:
                             if edu_office:
                                 result['현재교육청'] = edu_office
                         else:
-                            # 초등학교/유치원: find_education_office_for_school() 사용 (hints fallback 포함)
-                            edu_office = self.find_education_office_for_school(result['현재분회'], hints)
                             if edu_office:
                                 result['현재교육청'] = edu_office
+
+            # Fix 5 & 9: 타시도전입자 등 비고란에서 이전 학교명/교육청 파악
+            # 현재분회/교육청이 비어있고 비고란(10번째 필드)이 있는 경우
+            if (not result['현재분회'] or not result['현재교육청']) and len(row) > 9:
+                field_10 = str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else ''
+                
+                if field_10:
+                    # 1. "전입(이전학교)" 형식 파악
+                    # 예: "전입(서울 OO초)", "타시도전입(OO중)"
+                    
+                    # 괄호 안의 내용 추출
+                    import re
+                    match = re.search(r'\((.*?)\)', field_10)
+                    if match:
+                        content = match.group(1)
+                        # 학교명인지 확인
+                        if self.is_school_name(content):
+                            # 지역명+학교명 분리 시도
+                            edu, school = self.parse_abbreviated_school_format(content)
+                            if school:
+                                result['현재분회'] = school
+                            if edu:
+                                result['현재교육청'] = edu
+                            elif not edu and school:
+                                # 학교명에서 교육청 찾기 시도
+                                edu = self.find_education_office_for_school(school, hints)
+                                if edu:
+                                    result['현재교육청'] = edu
+                                    
+                    # 2. 단순히 학교명이 적혀있는 경우
+                    if not result['현재분회'] and self.is_school_name(field_10):
+                        school = self.expand_school_abbreviation(field_10)
+                        result['현재분회'] = school
+                        # 교육청 찾기
+                        edu = self.find_education_office_for_school(school, hints)
+                        if edu:
+                            result['현재교육청'] = edu
+                            
+                    # 3. "서울", "경기" 등 타시도 지역명이 적혀있는 경우
+                    if not result['현재교육청']:
+                        # 강원도 지역명이 아닌 다른 지역명이 있는지 확인
+                        # 간단하게 2글자 지역명으로 추정
+                        potential_region = field_10[:2]
+                        if potential_region not in self.GANGWON_REGIONS:
+                             # 서울, 경기, 부산 등...
+                             # 타시도는 교육청 공란 유지 (Fix 4)
+                             pass
+
 
         # 9번째 필드 → 과목 처리 (학교명 감지 및 이동)
         # 이 부분은 발령분회/현재분회가 모두 처리된 후에 실행됨
