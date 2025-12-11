@@ -35,6 +35,35 @@ class KFTAParser:
         '고성': '강원특별자치도고성교육지원청',
     }
 
+    # 타시도 지역명 (강원도 외 지역)
+    OTHER_REGIONS = [
+        '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+        '경기', '충북', '충남', '전북', '전남', '경북', '경남', '제주'
+    ]
+
+    # 특정 학교 매핑 데이터베이스 (정확한 정보가 필요한 학교들)
+    SPECIFIC_SCHOOL_MAPPINGS = {
+        # 춘천 지역
+        '동산중학교': ('강원특별자치도춘천교육지원청', '동산중학교'),
+        '춘천동산중학교': ('강원특별자치도춘천교육지원청', '동산중학교'),
+        '동내초등학교': ('강원특별자치도춘천교육지원청', '동내초등학교'),
+        '금병초등학교': ('강원특별자치도춘천교육지원청', '금병초등학교'),
+        '송화초등학교': ('강원특별자치도춘천교육지원청', '송화초등학교'),
+        '지촌초등학교': ('강원특별자치도춘천교육지원청', '지촌초등학교'),
+        '창촌중학교': ('강원특별자치도춘천교육지원청', '창촌중학교'),
+        '강서중학교': ('강원특별자치도춘천교육지원청', '강서중학교'),
+        '우석중학교': ('강원특별자치도춘천교육지원청', '우석중학교'),
+        '만천유치원': ('강원특별자치도춘천교육지원청', '만천유치원'),
+        '봄봄유치원': ('강원특별자치도춘천교육지원청', '봄봄유치원'),
+        '새봄유치원': ('강원특별자치도춘천교육지원청', '새봄유치원'),
+        '온의유치원': ('강원특별자치도춘천교육지원청', '온의유치원'),
+
+        # 원주 지역
+        '동광산과고': ('강원특별자치도원주교육지원청', '동광산업과학고등학교'),
+        '동광산업과학고등학교': ('강원특별자치도원주교육지원청', '동광산업과학고등학교'),
+        '강원생명과학고등학교': ('강원특별자치도원주교육지원청', '강원생명과학고등학교'),
+    }
+
     # 학교 약칭 매핑
     SCHOOL_ABBR_MAPPINGS = {
         '공고': '공업고등학교',
@@ -154,21 +183,49 @@ class KFTAParser:
             return ('', school_text)
 
         school_text = str(school_text).strip()
+        original_school_text = school_text
 
-        # 패턴 1: "지역명 학교명" (공백 포함)
-        # 패턴 2: "지역명학교명" (공백 없음)
+        # 1단계: 특정 학교 매핑 우선 체크
+        if school_text in self.SPECIFIC_SCHOOL_MAPPINGS:
+            return self.SPECIFIC_SCHOOL_MAPPINGS[school_text]
+
+        # 약칭 확장 후 다시 체크
+        expanded = self.expand_school_abbreviation(school_text)
+        if expanded in self.SPECIFIC_SCHOOL_MAPPINGS:
+            return self.SPECIFIC_SCHOOL_MAPPINGS[expanded]
+
+        # 2단계: 타시도 지역 체크
+        for other_region in self.OTHER_REGIONS:
+            if school_text.startswith(other_region):
+                # 타시도 학교는 교육지원청 없음
+                remainder = school_text[len(other_region):].strip()
+                if remainder:
+                    school_name = self.expand_school_abbreviation(remainder)
+                    return ('', school_name)  # 교육지원청 빈 문자열
+                break
+
+        # 3단계: 강원도 지역명 체크 - 공백이 있는 경우에만 지역명으로 인식
         region = None
         school_name = school_text
 
-        # 강원도 지역명 찾기
         for region_name in self.GANGWON_REGIONS.keys():
-            if school_text.startswith(region_name):
+            # 패턴 1: "지역명 학교명" (공백 있음) - 지역명 제거
+            if school_text.startswith(region_name + ' '):
                 region = region_name
-                # 지역명 제거
                 remainder = school_text[len(region_name):].strip()
                 if remainder:
                     school_name = remainder
                 break
+            # 패턴 2: "지역명OO초/중/고" (공백 없고 학교명이 짧음) - 약칭 형식
+            # 예: "춘천남산초" (O), "춘천교대부설초등학교" (X - 실제 학교명)
+            elif school_text.startswith(region_name):
+                # 지역명 제거 후 남은 부분
+                remainder = school_text[len(region_name):]
+                # 남은 부분이 짧고 (10자 이하) 초/중/고/유로 끝나면 약칭으로 간주
+                if remainder and len(remainder) <= 10 and any(remainder.endswith(x) for x in ['초', '중', '고', '유']):
+                    region = region_name
+                    school_name = remainder
+                    break
 
         # 학교 약칭 확장
         school_name = self.expand_school_abbreviation(school_name)
@@ -179,6 +236,40 @@ class KFTAParser:
             education_office = self.get_education_office(region)
 
         return (education_office, school_name)
+
+    def clean_school_name(self, school_name: str) -> str:
+        """
+        학교명에서 불필요한 텍스트 제거
+
+        Args:
+            school_name: 원본 학교명
+
+        Returns:
+            정리된 학교명
+        """
+        if pd.isna(school_name) or not school_name:
+            return school_name
+
+        school_name = str(school_name).strip()
+
+        # 제거할 패턴 리스트 (학교명 뒤에 붙는 추가 정보)
+        patterns_to_remove = [
+            ' 전문상담', '전문상담',
+            ' 보건', '보건',
+            ' 영양', '영양',
+            ' 사서', '사서',
+            ' 특수', '특수',
+            ' 상담', '상담',
+            ' (전문상담)', '(전문상담)',
+            ' (보건)', '(보건)',
+        ]
+
+        for pattern in patterns_to_remove:
+            if school_name.endswith(pattern):
+                school_name = school_name[:-len(pattern)].strip()
+                break
+
+        return school_name
 
     def normalize_position(self, position: str) -> str:
         """
@@ -294,6 +385,8 @@ class KFTAParser:
         # 6번째 필드 → 발령본청 및 발령교육청
         if len(row) > 5:
             field_6 = str(row.iloc[5]).strip() if pd.notna(row.iloc[5]) else ''
+            # 불필요한 텍스트 제거 (전문상담, 보건 등)
+            field_6 = self.clean_school_name(field_6)
 
             # 중고등학교는 AI 검증 우선 시도 (use_ai=True인 경우)
             is_middle_high = '중학' in field_6 or '고등' in field_6 or field_6.endswith('중') or field_6.endswith('고')
@@ -325,12 +418,16 @@ class KFTAParser:
         # 8번째 필드 처리
         if len(row) > 7:
             field_8 = str(row.iloc[7]).strip() if pd.notna(row.iloc[7]) else ''
+            # 불필요한 텍스트 제거
+            field_8 = self.clean_school_name(field_8)
 
             # 8번째 필드가 지역명만 있는 경우
             if self.is_region_name_only(field_8):
                 # 9번째 필드 참고
                 if len(row) > 8:
                     field_9 = str(row.iloc[8]).strip() if pd.notna(row.iloc[8]) else ''
+                    # 불필요한 텍스트 제거
+                    field_9 = self.clean_school_name(field_9)
 
                     # "□□ OO초" 형식 파싱
                     edu_office, school_name = self.parse_abbreviated_school_format(field_9)

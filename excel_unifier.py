@@ -493,7 +493,7 @@ class ExcelUnifier:
         return result_df
 
     def save_unified_excel(self, output_path: str, df: pd.DataFrame = None) -> None:
-        """통합된 데이터를 엑셀 파일로 저장"""
+        """통합된 데이터를 엑셀 파일로 저장 (타시도 학교 빨간색 표시)"""
         if df is None:
             df = self.unify_dataframes()
 
@@ -501,6 +501,79 @@ class ExcelUnifier:
 
         # 엑셀로 저장
         df.to_excel(output_path, index=False, engine='openpyxl')
+
+        # 타시도 학교 셀 색상 표시
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+
+            wb = load_workbook(output_path)
+            ws = wb.active
+
+            # 빨간색 배경 설정
+            red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+
+            # 타시도 지역 리스트
+            OTHER_REGIONS = [
+                '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+                '경기', '충북', '충남', '전북', '전남', '경북', '경남', '제주'
+            ]
+
+            # 현재교육청과 발령교육청, 현재본청, 발령본청 컬럼 인덱스 찾기
+            columns = list(df.columns)
+            col_indices = {}
+            for col_name in ['현재교육청', '발령교육청', '현재본청', '발령본청']:
+                if col_name in columns:
+                    # Excel 컬럼은 1부터 시작 (A=1, B=2, ...)
+                    col_indices[col_name] = columns.index(col_name) + 1
+
+            # 각 행 검사 (헤더 제외, 데이터는 2행부터)
+            colored_count = 0
+            for row_idx in range(2, len(df) + 2):  # Excel은 1-based, 헤더가 1행
+                is_other_region = False
+
+                # 교육청이 빈 문자열인지 확인
+                if '현재교육청' in col_indices or '발령교육청' in col_indices:
+                    for col_name in ['현재교육청', '발령교육청']:
+                        if col_name in col_indices:
+                            cell_value = ws.cell(row=row_idx, column=col_indices[col_name]).value
+                            # 교육청이 비어있고 학교명이 있으면 타시도일 가능성
+                            if not cell_value or str(cell_value).strip() == '':
+                                # 해당 본청 확인
+                                본청_col = '현재본청' if col_name == '현재교육청' else '발령본청'
+                                if 본청_col in col_indices:
+                                    school_value = ws.cell(row=row_idx, column=col_indices[본청_col]).value
+                                    if school_value and str(school_value).strip():
+                                        is_other_region = True
+                                        break
+
+                # 학교명에 타시도 지역명이 포함되어 있는지 확인
+                if not is_other_region:
+                    for col_name in ['현재본청', '발령본청']:
+                        if col_name in col_indices:
+                            cell_value = ws.cell(row=row_idx, column=col_indices[col_name]).value
+                            if cell_value:
+                                for region in OTHER_REGIONS:
+                                    if region in str(cell_value):
+                                        is_other_region = True
+                                        break
+                            if is_other_region:
+                                break
+
+                # 타시도 학교면 해당 행의 학교명 셀들을 빨간색으로
+                if is_other_region:
+                    for col_name in ['현재본청', '발령본청']:
+                        if col_name in col_indices:
+                            ws.cell(row=row_idx, column=col_indices[col_name]).fill = red_fill
+                    colored_count += 1
+
+            wb.save(output_path)
+
+            if colored_count > 0:
+                print(f"  🔴 타시도 학교 {colored_count}개 빨간색 표시 완료")
+
+        except Exception as e:
+            print(f"  ⚠️  셀 색상 표시 실패: {str(e)} (데이터는 정상 저장됨)")
 
         print(f"  ✓ 저장 완료: {len(df)}행, {len(df.columns)}개 컬럼")
 
