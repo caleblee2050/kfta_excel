@@ -29,6 +29,8 @@
    - 다음 환경변수 추가:
      ```
      GEMINI_API_KEY=AIzaSyDFqJLNAJvMaE6fUtDmCGMdz7E4yYH-g9Q
+     TURSO_DATABASE_URL=libsql://your-db-url.turso.io
+     TURSO_AUTH_TOKEN=your-auth-token
      ```
    - 저장하면 자동으로 재배포
 

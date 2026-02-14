@@ -1,6 +1,6 @@
 # Excel Unifier
 
-**버전:** 1.2.0 | **최근 업데이트:** 2025-11-13
+**버전:** 1.4.0 | **최근 업데이트:** 2026-02-14
 
 통일되지 않은 양식으로 작성된 여러 엑셀 파일을 분석하여 자동으로 통합하는 도구입니다.
 
@@ -25,6 +25,21 @@
 pip install -r requirements.txt
 ```
 
+선택 기능(Turso DB)을 쓰려면:
+
+```bash
+pip install -r requirements-optional.txt
+```
+
+## 프로젝트 구조
+
+```text
+src/kfta_excel/      핵심 패키지 (unifier, parser, app)
+tests/               자동 검증 테스트
+scripts/             보조 스크립트 및 검증 파이프라인
+scripts/legacy/      기존 수동 테스트 스크립트
+```
+
 ## 사용법
 
 ### 🌐 웹 대시보드 (권장)
@@ -39,9 +54,8 @@ pip install -r requirements.txt
 
 **웹 대시보드 주요 기능:**
 - 드래그 앤 드롭 파일 업로드
-- 실시간 데이터 미리보기
-- 인터랙티브 설정 조정
-- 시각화된 통계 차트
+- KFTA 표준 형식 단일 출력
+- 품질 점수/결측률 진단
 - 원클릭 결과 다운로드
 
 ### 💻 명령줄 사용
@@ -84,7 +98,7 @@ python excel_unifier.py file1.xlsx file2.xlsx file3.xlsx -o output.xlsx
 
 ```bash
 # 1. 예제 파일 생성 (venv/bin/python 또는 python3 사용)
-venv/bin/python example_generator.py
+venv/bin/python scripts/example_generator.py
 
 # 2. 통합 실행
 ./run.sh examples/*.xlsx -o examples/unified_result.xlsx -k 이름 학교
@@ -144,6 +158,24 @@ unifier.save_unified_excel('output.xlsx', unified_df)
 # 리포트 생성
 report = unifier.generate_report('report.txt')
 print(report)
+```
+
+## 검증 프로세스
+
+```bash
+./scripts/verify.sh
+```
+
+- `src`, `tests`, `scripts` 구문/컴파일 검사
+- `tests/test_*.py` 자동 테스트 실행
+
+## AI 모델 설정
+
+기본 AI 모델은 `gemini-3-flash`이며, 실패 시 `gemini-2.5-flash` 등으로 자동 폴백합니다.
+
+```bash
+export GEMINI_API_KEY="YOUR_API_KEY"
+export GEMINI_MODEL="gemini-3-flash"
 ```
 
 ## 작동 원리
